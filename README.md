@@ -112,7 +112,7 @@ neurometabolic-dashboard/
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/neurometabolic-dashboard.git
+git clone https://https://github.com/Radian20Hz/NeuroMetabolic-Dashboard.git
 cd neurometabolic-dashboard
 
 # Backend setup
