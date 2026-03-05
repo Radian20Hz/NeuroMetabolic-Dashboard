@@ -2,7 +2,7 @@
 Application Configuration - loaded from environment variables / .env file
 """
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import List
 
 
