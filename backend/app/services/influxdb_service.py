@@ -26,9 +26,9 @@ class InfluxDBService:
         Write a list of GlucoseReading objects to InfluxDB.
         Returns the number of successfully written points.
         """
-        
+
         points = []
-       
+
         for reading in readings:
             point = (
                 Point("glucose_reading")
@@ -45,7 +45,7 @@ class InfluxDBService:
         )
 
         return len(points)
-    
+
     def get_latest_reading(self, hours: int = 24) -> list[dict]:
         """
         Query the last N hours of glucose readings from InfluxDB.
@@ -70,7 +70,7 @@ class InfluxDBService:
                 })
 
         return readings
-    
+
     def close(self):
         """Close the InfluxDB client connection."""
         self.client.close()
