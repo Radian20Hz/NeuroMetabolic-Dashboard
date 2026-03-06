@@ -2,7 +2,6 @@
 InfluxDB Service – persists CGM glucose readings to time-series database.
 """
 
-from datetime import datetime
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -60,7 +59,7 @@ class InfluxDBService:
           |> sort(columns: ["_time"])
         """
 
-        tabels = self.query_api.query(query, org=settings.INFLUXDB_ORG)
+        tables = self.query_api.query(query, org=settings.INFLUXDB_ORG)
 
         readings = []
         for table in tables:
