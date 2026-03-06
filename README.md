@@ -2,9 +2,20 @@
 
 > AI-driven decision-support system for Type 1 Diabetes management — predicting glycemic trends using Temporal Fusion Transformers and closed-loop pump data.
 
-[![CI](https://github.com/Radian20Hz/neurometabolic-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Radian20Hz/neurometabolic-dashboard/actions)
+[![CI](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions)
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard)
+
+> 🚧 **Active Development** — Phase 1 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
+
+---
+
+## 💡 Motivation
+
+This project is built by a T1D patient, not just *for* T1D patients.
+
+The developer wears a **Medtronic 780G closed-loop insulin pump** every day — which means this is not an academic exercise. The data this system processes is the same data that determines insulin delivery in real life. That personal stake is what drives the engineering decisions: precision over convenience, explainability over black-box accuracy, and patient safety above all else.
 
 ---
 
@@ -112,7 +123,7 @@ neurometabolic-dashboard/
 
 ```bash
 # Clone repository
-git clone https://https://github.com/Radian20Hz/NeuroMetabolic-Dashboard.git
+git clone https://github.com/Radian20Hz/NeuroMetabolic-Dashboard.git
 cd neurometabolic-dashboard
 
 # Backend setup
