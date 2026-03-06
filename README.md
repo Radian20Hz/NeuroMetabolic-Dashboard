@@ -2,7 +2,7 @@
 
 > AI-driven decision-support system for Type 1 Diabetes management — predicting glycemic trends using Temporal Fusion Transformers and closed-loop pump data.
 
-[![CI](https://github.com/YOUR_USERNAME/neurometabolic-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/neurometabolic-dashboard/actions)
+[![CI](https://github.com/Radian20Hz/neurometabolic-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Radian20Hz/neurometabolic-dashboard/actions)
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
