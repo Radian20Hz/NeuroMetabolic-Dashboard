@@ -18,12 +18,21 @@ class GlucoseReading:
 def parse_glucose_readings(filepath: str) -> list[GlucoseReading]:
     """
     Parse CGM glucose readings from a CareLink CSV export file.
+    Handles metadata headers and sensor threshold values (High/Low).
     Returns a list of GlucoseReading objects.
     """
     readings = []
 
     with open(filepath, newline="", encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
+
+        for line in csvfile:
+            if "Timestamp" in line:
+                break
+
+        reader = csv.DictReader(csvfile, fieldnames=[
+            "Timestamp (YYYY-MM-DDThh:mm:ss)",
+            "Sensor Glucose (mg/dL)",
+        ])
 
         for row in reader:
             try:
@@ -31,7 +40,14 @@ def parse_glucose_readings(filepath: str) -> list[GlucoseReading]:
                     row["Timestamp (YYYY-MM-DDThh:mm:ss)"],
                     "%Y-%m-%dT%H:%M:%S"
                 )
-                glucose = float(row["Sensor Glucose (mg/dL)"])
+
+                raw_glucose = row["Sensor Glucose (mg/dL)"]
+                if raw_glucose == "Low":
+                    glucose = 39.0
+                elif raw_glucose == "High":
+                    glucose = 401.0
+                else:
+                    glucose = float(raw_glucose)
 
                 readings.append(
                     GlucoseReading(
