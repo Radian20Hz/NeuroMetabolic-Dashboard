@@ -76,6 +76,3 @@ async def get_latest_readings(hours: int = 24):
         "count": len(readings),
         "readings": readings,
     }
-
-
-
