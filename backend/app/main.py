@@ -4,6 +4,7 @@ NeuroMetabolic Dashboard - FastApi Application Entry Point
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.glucose import router as glucose_router
 
 from app.core.config import settings
 
@@ -32,3 +33,5 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy"}
+
+app.include_router(glucose_router, prefix="/api/v1")
