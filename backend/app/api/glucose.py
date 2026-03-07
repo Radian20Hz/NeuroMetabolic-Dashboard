@@ -17,7 +17,7 @@ async def upload_carelink_data(file: UploadFile = File(...)):
     Upload a CareLink CSV export file.
     Parses glucose readings and stores them in InfluxDB.
     """
-    if not file.filename.endswith(".csv"):
+    if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(
             status_code=400,
             detail="Only CSV files are accepted.",

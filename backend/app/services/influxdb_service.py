@@ -46,7 +46,7 @@ class InfluxDBService:
 
         return len(points)
 
-    def get_latest_reading(self, hours: int = 24) -> list[dict]:
+    def get_latest_readings(self, hours: int = 24) -> list[dict]:
         """
         Query the last N hours of glucose readings from InfluxDB.
         Returns a list of dicts with timestamp and glucose value.
