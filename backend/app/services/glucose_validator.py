@@ -8,11 +8,11 @@ from dataclasses import dataclass
 
 
 class GlucoseZone(Enum):
-    SEVERE_HYPO="Severe_Hypoglycemia"
-    HYPO="Hypoglycemia"
-    NORMAL="Normal"
-    HYPER="Hyperglycemia"
-    SEVERE_HYPER="Severe_Hyperglycemia"
+    SEVERE_HYPO = "Severe_Hypoglycemia"
+    HYPO = "Hypoglycemia"
+    NORMAL = "Normal"
+    HYPER = "Hyperglycemia"
+    SEVERE_HYPER = "Severe_Hyperglycemia"
 
 
 @dataclass
