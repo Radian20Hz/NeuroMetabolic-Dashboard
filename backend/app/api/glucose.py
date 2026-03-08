@@ -2,6 +2,7 @@
 Glucose API endpoints – handles CGM data ingestion and retrieval.
 """
 
+from app.models.glucose import UploadResponse, LatestReadingsResponse
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.carelink_parser import parse_glucose_readings
 from app.services.influxdb_service import InfluxDBService
@@ -11,8 +12,8 @@ import os
 router = APIRouter(prefix="/glucose", tags=["glucose"])
 
 
-@router.post("/upload")
-async def upload_carelink_data(file: UploadFile = File(...)):
+@router.post("/upload", response_model=UploadResponse)
+async def upload_carelink_csv(file: UploadFile = File(...)):
     """
     Upload a CareLink CSV export file.
     Parses glucose readings and stores them in InfluxDB.
@@ -54,7 +55,7 @@ async def upload_carelink_data(file: UploadFile = File(...)):
         os.unlink(tmp_path)
 
 
-@router.get("/latest")
+@router.get("/latest", response_model=LatestReadingsResponse)
 async def get_latest_readings(hours: int = 24):
     """
     Get the latest glucose readings from InfluxDB.
