@@ -32,6 +32,7 @@ class GlucoseStats(BaseModel):
     readings_count: int = Field(..., ge=0)
     time_in_range_percent: float = Field(..., ge=0.0, le=100.0)
 
+
 class ClassifyRequest(BaseModel):
     glucose_mg_dl: float = Field(..., ge=0.0, le=600.0)
 
@@ -41,6 +42,7 @@ class ClassifyResponse(BaseModel):
     zone: str
     is_critical: bool
     message: str
+
 
 class GlucoseStatisticsResponse(BaseModel):
     count: int = Field(..., ge=0)

@@ -77,6 +77,7 @@ def calculate_time_in_range(readings: list[float]) -> float:
     in_range = sum(1 for r in readings if 70 <= r <= 180)
     return round((in_range / len(readings)) * 100, 2)
 
+
 def calculate_statistics(readings: list[float]) -> dict:
     """
     Calculate full glycemic statistics for a set of readings.
