@@ -2,7 +2,6 @@
 CareLink CSV Parser – ETL fallback layer
 Parses exported Medtronic CareLink CSV files into structured data.
 """
-
 import csv
 from dataclasses import dataclass
 from datetime import datetime
@@ -42,6 +41,9 @@ def parse_glucose_readings(filepath: str) -> list[GlucoseReading]:
                 continue
 
             if headers is None:
+                continue
+
+            if glucose_col is None or date_col is None or time_col is None:
                 continue
 
             try:
