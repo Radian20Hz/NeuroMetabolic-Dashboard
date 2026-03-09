@@ -1,5 +1,6 @@
 """
 Unit tests – CareLink CSV Parser
+Uses real Medtronic 780G CareLink export format.
 """
 
 import pytest
@@ -8,10 +9,12 @@ from app.services.carelink_parser import parse_glucose_readings, GlucoseReading
 
 
 def test_parse_valid_csv(tmp_path):
-    csv_content = """Timestamp (YYYY-MM-DDThh:mm:ss),Sensor Glucose (mg/dL)
-2026-03-06T08:00:00,120.0
-2026-03-06T08:05:00,118.5
-2026-03-06T08:10:00,115.0
+    csv_content = """Device: Medtronic 780G
+Serial: ABC123
+Index,Date,Time,BG Source,Sensor Glucose (mg/dL)
+0,2026/03/06,08:00:00,,120
+1,2026/03/06,08:05:00,,118
+2,2026/03/06,08:10:00,,115
 """
     csv_file = tmp_path / "test_carelink.csv"
     csv_file.write_text(csv_content)
@@ -24,10 +27,10 @@ def test_parse_valid_csv(tmp_path):
 
 
 def test_skip_invalid_rows(tmp_path):
-    csv_content = """Timestamp (YYYY-MM-DDThh:mm:ss),Sensor Glucose (mg/dL)
-2026-03-06T08:00:00,120.0
-INVALID_ROW,not_a_number
-2026-03-06T08:10:00,115.0
+    csv_content = """Index,Date,Time,BG Source,Sensor Glucose (mg/dL)
+0,2026/03/06,08:00:00,,120
+1,INVALID,INVALID,,not_a_number
+2,2026/03/06,08:10:00,,115
 """
     csv_file = tmp_path / "test_carelink_invalid.csv"
     csv_file.write_text(csv_content)
@@ -38,7 +41,7 @@ INVALID_ROW,not_a_number
 
 
 def test_empty_csv(tmp_path):
-    csv_content = """Timestamp (YYYY-MM-DDThh:mm:ss),Sensor Glucose (mg/dL)
+    csv_content = """Index,Date,Time,BG Source,Sensor Glucose (mg/dL)
 """
     csv_file = tmp_path / "test_empty.csv"
     csv_file.write_text(csv_content)
@@ -47,13 +50,14 @@ def test_empty_csv(tmp_path):
 
     assert len(readings) == 0
 
+
 def test_handle_high_low_values(tmp_path):
     csv_content = """Device Info
 Patient: Test
-Timestamp (YYYY-MM-DDThh:mm:ss),Sensor Glucose (mg/dL)
-2026-03-06T08:00:00,Low
-2026-03-06T08:05:00,High
-2026-03-06T08:10:00,120.0
+Index,Date,Time,BG Source,Sensor Glucose (mg/dL)
+0,2026/03/06,08:00:00,,Low
+1,2026/03/06,08:05:00,,High
+2,2026/03/06,08:10:00,,120
 """
     csv_file = tmp_path / "test_high_low.csv"
     csv_file.write_text(csv_content)
@@ -70,8 +74,8 @@ def test_skip_metadata_headers(tmp_path):
     csv_content = """Device: Medtronic 780G
 Serial: ABC123
 Export Date: 2026-03-06
-Timestamp (YYYY-MM-DDThh:mm:ss),Sensor Glucose (mg/dL)
-2026-03-06T08:00:00,120.0
+Index,Date,Time,BG Source,Sensor Glucose (mg/dL)
+0,2026/03/06,08:00:00,,120
 """
     csv_file = tmp_path / "test_metadata.csv"
     csv_file.write_text(csv_content)

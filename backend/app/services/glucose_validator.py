@@ -8,11 +8,11 @@ from dataclasses import dataclass
 
 
 class GlucoseZone(Enum):
-    SEVERE_HYPO = "Severe_Hypoglycemia"
-    HYPO = "Hypoglycemia"
-    NORMAL = "Normal"
-    HYPER = "Hyperglycemia"
-    SEVERE_HYPER = "Severe_Hyperglycemia"
+    SEVERE_HYPO = "severe_hypoglycemia"
+    HYPO = "hypoglycemia"
+    NORMAL = "normal"
+    HYPER = "hyperglycemia"
+    SEVERE_HYPER = "severe_hyperglycemia"
 
 
 @dataclass
@@ -76,3 +76,37 @@ def calculate_time_in_range(readings: list[float]) -> float:
 
     in_range = sum(1 for r in readings if 70 <= r <= 180)
     return round((in_range / len(readings)) * 100, 2)
+
+def calculate_statistics(readings: list[float]) -> dict:
+    """
+    Calculate full glycemic statistics for a set of readings.
+    Returns min, max, avg, std_dev and TIR.
+    """
+    if not readings:
+        return {
+            "count": 0,
+            "min_glucose": None,
+            "max_glucose": None,
+            "avg_glucose": None,
+            "std_dev": None,
+            "time_in_range_percent": 0.0,
+        }
+
+    count = len(readings)
+    min_glucose = round(min(readings), 2)
+    max_glucose = round(max(readings), 2)
+    avg_glucose = round(sum(readings) / count, 2)
+
+    variance = sum((r - avg_glucose) ** 2 for r in readings) / count
+    std_dev = round(variance ** 0.5, 2)
+
+    tir = calculate_time_in_range(readings)
+
+    return {
+        "count": count,
+        "min_glucose": min_glucose,
+        "max_glucose": max_glucose,
+        "avg_glucose": avg_glucose,
+        "std_dev": std_dev,
+        "time_in_range_percent": tir,
+    }
