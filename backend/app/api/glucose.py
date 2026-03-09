@@ -96,6 +96,7 @@ async def classify_glucose_reading(request: ClassifyRequest):
         message=result.message,
     )
 
+
 @router.post("/statistics", response_model=GlucoseStatisticsResponse)
 async def get_glucose_statistics(file: UploadFile = File(...)):
     """
