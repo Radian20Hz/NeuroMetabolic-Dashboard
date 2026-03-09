@@ -137,3 +137,42 @@ def test_statistics_rejects_empty_csv():
         files={"file": ("data.csv", csv_content, "text/csv")},
     )
     assert response.status_code == 422
+
+def test_statistics_valid_csv():
+    csv_content = (
+        b"Index,Date,Time,BG Source,Sensor Glucose (mg/dL)\n"
+        b"0,2026/03/06,08:00:00,,120\n"
+        b"1,2026/03/06,08:05:00,,80\n"
+        b"2,2026/03/06,08:10:00,,50\n"
+        b"3,2026/03/06,08:15:00,,200\n"
+    )
+
+    response = client.post(
+        "/api/v1/glucose/statistics",
+        files={"file": ("data.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 4
+    assert data["min_glucose"] == 50.0
+    assert data["max_glucose"] == 200.0
+    assert data["time_in_range_percent"] == 50.0
+
+
+def test_statistics_rejects_non_csv():
+    response = client.post(
+        "/api/v1/glucose/statistics",
+        files={"file": ("data.txt", b"some content", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+def test_statistics_rejects_empty_csv():
+    csv_content = b"Index,Date,Time,BG Source,Sensor Glucose (mg/dL)\n"
+
+    response = client.post(
+        "/api/v1/glucose/statistics",
+        files={"file": ("data.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 422
