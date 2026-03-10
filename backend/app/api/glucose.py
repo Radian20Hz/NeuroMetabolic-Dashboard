@@ -24,7 +24,8 @@ router = APIRouter(prefix="/glucose", tags=["glucose"])
 async def upload_carelink_csv(file: UploadFile = File(...)):
     """
     Upload a CareLink CSV export file.
-    Parses glucose readings and stores them in InfluxDB.
+    Parses glucose readings, stores them in InfluxDB,
+    and returns full glycemic statistics.
     """
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(
@@ -54,10 +55,18 @@ async def upload_carelink_csv(file: UploadFile = File(...)):
         count = service.write_glucose_readings(readings)
         service.close()
 
-        return {
-            "status": "success",
-            "readings_saved": count,
-        }
+        glucose_values = [r.glucose_mg_dl for r in readings]
+        stats = calculate_statistics(glucose_values)
+
+        return UploadResponse(
+            status="success",
+            readings_saved=count,
+            min_glucose=stats["min_glucose"],
+            max_glucose=stats["max_glucose"],
+            avg_glucose=stats["avg_glucose"],
+            std_dev=stats["std_dev"],
+            time_in_range_percent=stats["time_in_range_percent"],
+        )
 
     finally:
         os.unlink(tmp_path)
@@ -172,7 +181,15 @@ async def scrape_carelink():
     count = service.write_glucose_readings(readings)
     service.close()
 
+    glucose_values = [r.glucose_mg_dl for r in readings]
+    stats = calculate_statistics(glucose_values)
+
     return UploadResponse(
         status="success",
         readings_saved=count,
+        min_glucose=stats["min_glucose"],
+        max_glucose=stats["max_glucose"],
+        avg_glucose=stats["avg_glucose"],
+        std_dev=stats["std_dev"],
+        time_in_range_percent=stats["time_in_range_percent"],
     )
