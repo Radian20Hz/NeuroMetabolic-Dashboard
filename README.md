@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard)
 
-> 🚧 **Active Development** — Phase 1 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
+> 🚧 **Active Development** — Phase 2 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
 
 ---
 
@@ -53,12 +53,13 @@ graph TD
 | Layer | Technology |
 |---|---|
 | **Backend** | Python 3.11, FastAPI |
-| **Database** | InfluxDB (time-series) |
+| **Database** | InfluxDB 2.7 (time-series) |
 | **ML Framework** | PyTorch, Temporal Fusion Transformer |
 | **Inference** | ONNX Runtime (Edge AI) |
 | **Frontend** | React.js, Tailwind CSS, Recharts |
 | **MLOps** | MLflow, DVC |
 | **CI/CD** | GitHub Actions, Flake8, MyPy, PyTest |
+| **Containerization** | Docker, Docker Compose |
 | **Security** | OAuth2 + JWT, AES-256 |
 
 ---
@@ -71,42 +72,78 @@ neurometabolic-dashboard/
 │   ├── app/
 │   │   ├── api/              # Route handlers
 │   │   ├── core/             # Config, security, dependencies
-│   │   ├── models/           # Pydantic schemas & DB models
+│   │   ├── models/           # Pydantic schemas
 │   │   ├── services/         # Business logic
 │   │   └── utils/            # Helpers
 │   └── tests/
 │       ├── unit/
 │       └── integration/
-├── frontend/                 # React dashboard UI
+├── frontend/                 # React dashboard UI (Phase 3)
 │   └── src/
 │       ├── components/
 │       ├── pages/
 │       ├── hooks/
 │       └── utils/
-├── ml/                       # ML pipeline
+├── ml/                       # ML pipeline (Phase 2)
 │   ├── data/
 │   │   ├── raw/              # OhioT1DM dataset (gitignored)
 │   │   └── processed/
 │   ├── models/               # Saved model weights (gitignored)
 │   ├── notebooks/            # Exploratory analysis
 │   └── scripts/              # Training & evaluation scripts
-├── infra/
-│   ├── docker/               # Docker configs
-│   └── github-actions/
+├── docker-compose.yml        # InfluxDB local setup
 └── .github/
     └── workflows/            # CI/CD pipelines
 ```
 
 ---
 
+## ✅ Progress
+
+### Phase 1 — ETL Pipeline (complete)
+
+- [x] CareLink CSV parser — handles real Medtronic 780G export format
+- [x] InfluxDB service — write and query glucose time-series data
+- [x] REST API — `/upload`, `/latest` endpoints
+- [x] Pydantic response models
+- [x] GitHub Actions CI/CD pipeline (flake8 + mypy + pytest)
+- [x] 30 unit tests — all passing
+
+### Phase 2 — Clinical Intelligence Layer (in progress)
+
+- [x] Glucose Validator — ADA 2024 clinical zone classification
+- [x] Time-in-Range calculator
+- [x] Glycemic statistics engine (min/max/avg/std_dev/TIR)
+- [x] `/classify` endpoint — single reading classification
+- [x] `/statistics` endpoint — full CSV statistical analysis
+- [x] Docker Compose + InfluxDB — end-to-end pipeline working with real pump data
+- [ ] CareLink API scraper — automated data ingestion
+- [ ] Stats enrichment on upload response
+
+### Phase 3 — TFT Model (planned Q4 2026)
+
+- [ ] OhioT1DM dataset preprocessing
+- [ ] TFT architecture implementation
+- [ ] ONNX conversion for edge inference
+- [ ] MARD validation < 10%
+
+### Phase 4 — Frontend & Production (planned Q1 2027)
+
+- [ ] React dashboard with CGM chart
+- [ ] "What-If" metabolic simulator
+- [ ] Proactive hypoglycemia alert system
+- [ ] Bilingual documentation (EN/JP)
+
+---
+
 ## 🚀 Roadmap
 
-| Phase | Timeline | Focus |
-|---|---|---|
-| **Phase 1** | Q2–Q3 2026 | ETL pipeline + OhioT1DM data aggregation |
-| **Phase 2** | Q4 2026 | TFT architecture + MARD validation |
-| **Phase 3** | Q1 2027 | ONNX conversion + "What-If" simulator UI |
-| **Phase 4** | Q2 2027 | Bilingual documentation (EN/JP) |
+| Phase | Timeline | Focus | Status |
+|---|---|---|---|
+| **Phase 1** | Q1–Q2 2026 | ETL pipeline + REST API | ✅ Complete |
+| **Phase 2** | Q2–Q3 2026 | Clinical intelligence layer | 🔄 In Progress |
+| **Phase 3** | Q4 2026 | TFT model + ONNX inference | 📅 Planned |
+| **Phase 4** | Q1 2027 | Frontend + production hardening | 📅 Planned |
 
 ---
 
@@ -115,9 +152,8 @@ neurometabolic-dashboard/
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+
-- Docker (recommended)
-- InfluxDB 2.x
+- Docker + Docker Compose
+- Node.js 18+ (Phase 4)
 
 ### Installation
 
@@ -126,15 +162,17 @@ neurometabolic-dashboard/
 git clone https://github.com/Radian20Hz/NeuroMetabolic-Dashboard.git
 cd neurometabolic-dashboard
 
+# Start InfluxDB
+docker compose up -d
+
 # Backend setup
 cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Frontend setup
-cd ../frontend
-npm install
+# Create .env file
+cp .env.example .env  # fill in your InfluxDB credentials
 ```
 
 ### Running locally
@@ -142,9 +180,17 @@ npm install
 ```bash
 # Backend
 cd backend && uvicorn app.main:app --reload
+# API docs available at http://localhost:8000/docs
 
-# Frontend
-cd frontend && npm run dev
+# InfluxDB UI
+# Available at http://localhost:8086
+```
+
+### Running tests
+
+```bash
+cd backend
+pytest tests/unit/ -v
 ```
 
 ---
@@ -158,11 +204,13 @@ cd frontend && npm run dev
 
 ---
 
-## 📊 Model Validation
+## 📊 Model Validation Targets
 
-Target metrics:
-- **MARD** (Mean Absolute Relative Difference): < 10%
-- **Clarke Error Grid**: > 95% in zones A+B
+| Metric | Target |
+|---|---|
+| **MARD** (Mean Absolute Relative Difference) | < 10% |
+| **Clarke Error Grid** zones A+B | > 95% |
+| **Time-in-Range** prediction accuracy | > 90% |
 
 ---
 
