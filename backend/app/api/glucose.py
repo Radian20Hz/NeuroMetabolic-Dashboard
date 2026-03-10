@@ -2,9 +2,15 @@
 Glucose API endpoints – handles CGM data ingestion and retrieval.
 """
 
+from app.services.carelink_scraper import CareLinkScraper
 from app.services.glucose_validator import classify_glucose, calculate_statistics
-from app.models.glucose import ClassifyRequest, ClassifyResponse, GlucoseStatisticsResponse
-from app.models.glucose import UploadResponse, LatestReadingsResponse
+from app.models.glucose import (
+    ClassifyRequest,
+    ClassifyResponse,
+    GlucoseStatisticsResponse,
+    UploadResponse,
+    LatestReadingsResponse,
+)
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.services.carelink_parser import parse_glucose_readings
 from app.services.influxdb_service import InfluxDBService
@@ -134,3 +140,39 @@ async def get_glucose_statistics(file: UploadFile = File(...)):
 
     finally:
         os.unlink(tmp_path)
+
+
+@router.post("/scrape", response_model=UploadResponse)
+async def scrape_carelink():
+    """
+    Fetch latest glucose readings directly from CareLink EU API.
+    Requires CARELINK_USERNAME and CARELINK_PASSWORD in .env
+    """
+    scraper = CareLinkScraper()
+
+    authenticated = scraper.authenticate()
+    if not authenticated:
+        raise HTTPException(
+            status_code=401,
+            detail="CareLink authentication failed. Check credentials in .env"
+        )
+
+    try:
+        readings = scraper.fetch_recent_readings()
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    if not readings:
+        raise HTTPException(
+            status_code=422,
+            detail="No glucose readings returned from CareLink."
+        )
+
+    service = InfluxDBService()
+    count = service.write_glucose_readings(readings)
+    service.close()
+
+    return UploadResponse(
+        status="success",
+        readings_saved=count,
+    )
