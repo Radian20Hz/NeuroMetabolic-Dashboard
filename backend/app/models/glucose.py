@@ -1,7 +1,6 @@
 """
 Pydantic models – data schemas for Glucose API requests and responses.
 """
-
 from typing import Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -16,6 +15,11 @@ class GlucoseReadingResponse(BaseModel):
 class UploadResponse(BaseModel):
     status: str
     readings_saved: int = Field(..., ge=0)
+    min_glucose: Optional[float] = None
+    max_glucose: Optional[float] = None
+    avg_glucose: Optional[float] = None
+    std_dev: Optional[float] = None
+    time_in_range_percent: Optional[float] = Field(None, ge=0.0, le=100.0)
 
 
 class LatestReadingsResponse(BaseModel):
