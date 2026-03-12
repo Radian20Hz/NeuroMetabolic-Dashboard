@@ -13,6 +13,36 @@ services:
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: nmd-super-secret-token
     volumes:
       - influxdb_data:/var/lib/influxdb2
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nmd_backend
+    ports:
+      - "8000:8000"
+    environment:
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: nmd-super-secret-token
+      INFLUXDB_ORG: nmd_org
+      INFLUXDB_BUCKET: glucose_data
+      CARELINK_USERNAME: ${CARELINK_USERNAME}
+      CARELINK_PASSWORD: ${CARELINK_PASSWORD}
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nmd_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   influxdb_data:

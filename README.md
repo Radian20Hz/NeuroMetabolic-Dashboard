@@ -3,11 +3,11 @@
 > AI-driven decision-support system for Type 1 Diabetes management — predicting glycemic trends using Temporal Fusion Transformers and closed-loop pump data.
 
 [![CI](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions)
-[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard)
 
-> 🚧 **Active Development** — Phase 2 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
+> 🚧 **Active Development** — Phase 2 complete, Phase 3 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
 
 ---
 
@@ -34,16 +34,17 @@ The **NeuroMetabolic Dashboard** integrates real-time CGM data from the **Medtro
 
 ## 🏗️ Architecture
 
-```
+```mermaid
 graph TD
   A[Medtronic 780G Pump] -->|Bluetooth| B[MiniMed Mobile App]
   B -->|HTTPS| C[CareLink Cloud]
   C -->|API Scraper / CSV Fallback| D[Data Ingestion Service]
-  D --> E[(InfluxDB)]
-  E --> F[TFT Model - PyTorch/MLflow]
-  F --> G[ONNX Runtime - Edge AI]
+  D --> E[(InfluxDB 2.7)]
+  E --> F[TFT Model — PyTorch/MLflow]
+  F -->|Model Export| G[ONNX Runtime — Edge AI]
   H[User Inputs: Meals/Activity] --> G
   G --> I[React Dashboard UI]
+  I -->|Visual Feedback| J[Patient]
 ```
 
 ---
@@ -52,11 +53,11 @@ graph TD
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Python 3.11, FastAPI |
+| **Backend** | Python 3.12, FastAPI |
 | **Database** | InfluxDB 2.7 (time-series) |
 | **ML Framework** | PyTorch, Temporal Fusion Transformer |
 | **Inference** | ONNX Runtime (Edge AI) |
-| **Frontend** | React.js, Tailwind CSS, Recharts |
+| **Frontend** | React 18, TypeScript, Tailwind CSS, Recharts |
 | **MLOps** | MLflow, DVC |
 | **CI/CD** | GitHub Actions, Flake8, MyPy, PyTest |
 | **Containerization** | Docker, Docker Compose |
@@ -73,24 +74,21 @@ neurometabolic-dashboard/
 │   │   ├── api/              # Route handlers
 │   │   ├── core/             # Config, security, dependencies
 │   │   ├── models/           # Pydantic schemas
-│   │   ├── services/         # Business logic
-│   │   └── utils/            # Helpers
+│   │   └── services/         # Business logic
 │   └── tests/
-│       ├── unit/
-│       └── integration/
-├── frontend/                 # React dashboard UI (Phase 3)
+│       └── unit/             # 45 tests — all passing
+├── frontend/                 # React + TypeScript dashboard
 │   └── src/
-│       ├── components/
-│       ├── pages/
-│       ├── hooks/
-│       └── utils/
-├── ml/                       # ML pipeline (Phase 2)
+│       ├── api/              # Axios API client
+│       ├── components/       # GlucoseChart, StatsCards, UploadPanel
+│       ├── hooks/            # useGlucoseData
+│       └── types/            # Shared TypeScript interfaces
+├── ml/                       # ML pipeline (Phase 3)
 │   ├── data/
 │   │   ├── raw/              # OhioT1DM dataset (gitignored)
-│   │   └── processed/
-│   ├── models/               # Saved model weights (gitignored)
-│   ├── notebooks/            # Exploratory analysis
-│   └── scripts/              # Training & evaluation scripts
+│   │   └── processed/        # Normalized features
+│   ├── scripts/              # Preprocessing & training
+│   └── notebooks/            # Exploratory analysis
 ├── docker-compose.yml        # InfluxDB local setup
 └── .github/
     └── workflows/            # CI/CD pipelines
@@ -100,38 +98,45 @@ neurometabolic-dashboard/
 
 ## ✅ Progress
 
-### Phase 1 — ETL Pipeline (complete)
+### Phase 1 — ETL Pipeline ✅ Complete
 
 - [x] CareLink CSV parser — handles real Medtronic 780G export format
 - [x] InfluxDB service — write and query glucose time-series data
 - [x] REST API — `/upload`, `/latest` endpoints
 - [x] Pydantic response models
 - [x] GitHub Actions CI/CD pipeline (flake8 + mypy + pytest)
-- [x] 30 unit tests — all passing
 
-### Phase 2 — Clinical Intelligence Layer (in progress)
+### Phase 2 — Clinical Intelligence Layer ✅ Complete
 
-- [x] Glucose Validator — ADA 2024 clinical zone classification
-- [x] Time-in-Range calculator
-- [x] Glycemic statistics engine (min/max/avg/std_dev/TIR)
-- [x] `/classify` endpoint — single reading classification
+- [x] Glucose Validator — ADA 2024 clinical zone classification (5 zones)
+- [x] Time-in-Range (TIR) calculator — ADA target: >70%
+- [x] GMI (Glucose Management Indicator) — Bergenstal 2018 formula
+- [x] CV (Coefficient of Variation) — stability flag at <36% threshold
+- [x] Full glycemic statistics engine (min/max/avg/std\_dev/TIR/GMI/CV)
+- [x] `/classify` endpoint — single reading ADA zone classification
 - [x] `/statistics` endpoint — full CSV statistical analysis
-- [x] Docker Compose + InfluxDB — end-to-end pipeline working with real pump data
-- [ ] CareLink API scraper — automated data ingestion
-- [ ] Stats enrichment on upload response
+- [x] `/scrape` endpoint — live CareLink EU API ingestion
+- [x] Background auto-fetch task (5 min interval, 60 min token cache)
+- [x] InfluxDB singleton — connection pooling via FastAPI Depends()
+- [x] Stats enrichment on upload response
+- [x] React frontend — GlucoseChart, StatsCards, UploadPanel
+- [x] **45 unit tests — all passing**
 
-### Phase 3 — TFT Model (planned Q4 2026)
+### Phase 3 — TFT Model 🔄 In Progress
 
-- [ ] OhioT1DM dataset preprocessing
-- [ ] TFT architecture implementation
-- [ ] ONNX conversion for edge inference
+- [x] ML pipeline directory scaffold
+- [x] OhioT1DM dataset preprocessing script
+- [ ] Feature engineering (IOB, CHO, activity windows)
+- [ ] TFT architecture implementation (PyTorch)
+- [ ] MLflow experiment tracking
+- [ ] ONNX export for edge inference
 - [ ] MARD validation < 10%
 
-### Phase 4 — Frontend & Production (planned Q1 2027)
+### Phase 4 — Production Hardening 📅 Planned (Q1 2027)
 
-- [ ] React dashboard with CGM chart
-- [ ] "What-If" metabolic simulator
-- [ ] Proactive hypoglycemia alert system
+- [ ] "What-If" metabolic simulator UI
+- [ ] Proactive hypoglycemia alert system (20 min lead time)
+- [ ] XAI — TFT attention map visualization
 - [ ] Bilingual documentation (EN/JP)
 
 ---
@@ -141,8 +146,8 @@ neurometabolic-dashboard/
 | Phase | Timeline | Focus | Status |
 |---|---|---|---|
 | **Phase 1** | Q1–Q2 2026 | ETL pipeline + REST API | ✅ Complete |
-| **Phase 2** | Q2–Q3 2026 | Clinical intelligence layer | 🔄 In Progress |
-| **Phase 3** | Q4 2026 | TFT model + ONNX inference | 📅 Planned |
+| **Phase 2** | Q2 2026 | Clinical intelligence layer | ✅ Complete |
+| **Phase 3** | Q3–Q4 2026 | TFT model + ONNX inference | 🔄 In Progress |
 | **Phase 4** | Q1 2027 | Frontend + production hardening | 📅 Planned |
 
 ---
@@ -151,9 +156,9 @@ neurometabolic-dashboard/
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Docker + Docker Compose
-- Node.js 18+ (Phase 4)
+- Node.js 18+
 
 ### Installation
 
@@ -173,17 +178,24 @@ pip install -r requirements.txt
 
 # Create .env file
 cp .env.example .env  # fill in your InfluxDB credentials
+
+# Frontend setup
+cd ../frontend
+npm install
+npm run dev
 ```
 
 ### Running locally
 
 ```bash
-# Backend
+# Backend — http://localhost:8000/docs
 cd backend && uvicorn app.main:app --reload
-# API docs available at http://localhost:8000/docs
 
-# InfluxDB UI
-# Available at http://localhost:8086
+# Frontend — http://localhost:5173
+cd frontend && npm run dev
+
+# InfluxDB UI — http://localhost:8086
+docker compose up -d
 ```
 
 ### Running tests
@@ -191,16 +203,8 @@ cd backend && uvicorn app.main:app --reload
 ```bash
 cd backend
 pytest tests/unit/ -v
+# Expected: 45 passed
 ```
-
----
-
-## 🔒 Data Privacy & Compliance
-
-- **GDPR/RODO compliant**: Full de-identification at the extraction layer
-- **OhioT1DM Dataset**: Fully de-identified academic benchmark dataset
-- **AES-256** encryption for data at rest
-- **OAuth2 + JWT** for stateless authentication
 
 ---
 
@@ -211,6 +215,15 @@ pytest tests/unit/ -v
 | **MARD** (Mean Absolute Relative Difference) | < 10% |
 | **Clarke Error Grid** zones A+B | > 95% |
 | **Time-in-Range** prediction accuracy | > 90% |
+
+---
+
+## 🔒 Data Privacy & Compliance
+
+- **GDPR/RODO compliant** — full de-identification at the extraction layer
+- **OhioT1DM Dataset** — fully de-identified academic benchmark dataset
+- **AES-256** encryption for data at rest
+- **OAuth2 + JWT** for stateless authentication
 
 ---
 

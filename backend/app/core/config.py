@@ -1,12 +1,17 @@
 """
-Application Configuration - loaded from environment variables / .env file
+Application Configuration – loaded from environment variables / .env file
 """
-
-from pydantic_settings import BaseSettings
 from typing import List
+from pydantic import ConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
     # App
     APP_NAME: str = "NeuroMetabolic Dashboard"
     DEBUG: bool = False
@@ -18,7 +23,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5137"]
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     # InfluxDB
     INFLUXDB_URL: str = "http://localhost:8086"
@@ -32,10 +37,6 @@ class Settings(BaseSettings):
     # CareLink
     CARELINK_USERNAME: str = ""
     CARELINK_PASSWORD: str = ""
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 settings = Settings()

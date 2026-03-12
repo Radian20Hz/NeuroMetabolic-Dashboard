@@ -2,3 +2,34 @@ backend/venv/
 __pycache__/
 *.pyc
 backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# ML data & models (never commit patient data or weights)
+ml/data/raw/
+ml/data/processed/
+ml/models/
+ml/*.onnx
+*.onnx
+
+# MLflow & DVC
+mlruns/
+.dvc/cache/
+*.dvc
+
+# Python
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

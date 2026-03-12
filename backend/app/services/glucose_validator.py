@@ -68,20 +68,42 @@ def classify_glucose(glucose_mg_dl: float) -> ValidationResult:
 def calculate_time_in_range(readings: list[float]) -> float:
     """
     Calculate Time-in-Range (TIR) percentage.
-    TIR = percentage of readings in 70-180 mg/dL range.
+    TIR = percentage of readings in 70–180 mg/dL range.
     ADA target: > 70% TIR for T1D patients.
     """
     if not readings:
         return 0.0
-
     in_range = sum(1 for r in readings if 70 <= r <= 180)
     return round((in_range / len(readings)) * 100, 2)
+
+
+def calculate_gmi(avg_glucose: float) -> float:
+    """
+    Calculate Glucose Management Indicator (GMI).
+    Estimates HbA1c from average CGM glucose.
+
+    Formula: GMI (%) = 3.31 + 0.02392 × avg_glucose (mg/dL)
+    Source: Bergenstal et al., Diabetes Care 2018.
+    """
+    return round(3.31 + 0.02392 * avg_glucose, 2)
+
+
+def calculate_cv(std_dev: float, avg_glucose: float) -> float:
+    """
+    Calculate Coefficient of Variation (CV) as a percentage.
+    CV = (std_dev / avg_glucose) × 100
+
+    ADA target for glycemic stability: CV < 36%.
+    """
+    if avg_glucose == 0:
+        return 0.0
+    return round((std_dev / avg_glucose) * 100, 2)
 
 
 def calculate_statistics(readings: list[float]) -> dict:
     """
     Calculate full glycemic statistics for a set of readings.
-    Returns min, max, avg, std_dev and TIR.
+    Returns ADA-compliant metrics: TIR, GMI, CV, and descriptive stats.
     """
     if not readings:
         return {
@@ -91,6 +113,9 @@ def calculate_statistics(readings: list[float]) -> dict:
             "avg_glucose": None,
             "std_dev": None,
             "time_in_range_percent": 0.0,
+            "gmi": None,
+            "cv_percent": None,
+            "cv_is_stable": None,
         }
 
     count = len(readings)
@@ -102,6 +127,8 @@ def calculate_statistics(readings: list[float]) -> dict:
     std_dev = round(variance ** 0.5, 2)
 
     tir = calculate_time_in_range(readings)
+    gmi = calculate_gmi(avg_glucose)
+    cv = calculate_cv(std_dev, avg_glucose)
 
     return {
         "count": count,
@@ -110,4 +137,7 @@ def calculate_statistics(readings: list[float]) -> dict:
         "avg_glucose": avg_glucose,
         "std_dev": std_dev,
         "time_in_range_percent": tir,
+        "gmi": gmi,
+        "cv_percent": cv,
+        "cv_is_stable": cv < 36.0,
     }

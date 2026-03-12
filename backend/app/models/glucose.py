@@ -9,7 +9,7 @@ from datetime import datetime
 class GlucoseReadingResponse(BaseModel):
     timestamp: datetime
     glucose_mg_dl: float = Field(..., ge=0.0, le=600.0)
-    units: str = "mg/dl"
+    units: str = "mg/dL"  # fixed: was "mg/dl"
 
 
 class UploadResponse(BaseModel):
@@ -20,6 +20,9 @@ class UploadResponse(BaseModel):
     avg_glucose: Optional[float] = None
     std_dev: Optional[float] = None
     time_in_range_percent: Optional[float] = Field(None, ge=0.0, le=100.0)
+    gmi: Optional[float] = None
+    cv_percent: Optional[float] = None
+    cv_is_stable: Optional[bool] = None
 
 
 class LatestReadingsResponse(BaseModel):
@@ -27,14 +30,6 @@ class LatestReadingsResponse(BaseModel):
     hours_requested: int = Field(..., ge=1, le=168)
     count: int = Field(..., ge=0)
     readings: list[GlucoseReadingResponse]
-
-
-class GlucoseStats(BaseModel):
-    min_glucose: float = Field(..., ge=0.0)
-    max_glucose: float = Field(..., ge=0.0)
-    avg_glucose: float = Field(..., ge=0.0)
-    readings_count: int = Field(..., ge=0)
-    time_in_range_percent: float = Field(..., ge=0.0, le=100.0)
 
 
 class ClassifyRequest(BaseModel):
@@ -55,3 +50,6 @@ class GlucoseStatisticsResponse(BaseModel):
     avg_glucose: Optional[float] = None
     std_dev: Optional[float] = None
     time_in_range_percent: float = Field(..., ge=0.0, le=100.0)
+    gmi: Optional[float] = None
+    cv_percent: Optional[float] = None
+    cv_is_stable: Optional[bool] = None
