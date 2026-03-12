@@ -1,13 +1,12 @@
 """
 Application Configuration – loaded from environment variables / .env file
 """
+from pydantic_settings import BaseSettings, SettingsConfigDict  # <- zmiana
 from typing import List
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(          # <- zmiana
         env_file=".env",
         env_file_encoding="utf-8",
     )
