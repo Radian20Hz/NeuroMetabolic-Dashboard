@@ -243,18 +243,14 @@ def build_feature_frame(data: dict[str, pd.DataFrame], subject_id: str) -> pd.Da
 
 def process_split(split: str) -> pd.DataFrame:
     """
-    Process all subjects in a given split ('training' or 'testing').
-    Returns a concatenated DataFrame for all subjects.
+    Process all subjects for a given split ('training' or 'testing').
+    Expects flat structure: ml/data/raw/559-ws-training.xml, ...
     """
-    split_dir = RAW_DIR / f"OhioT1DM-{split}"
-    if not split_dir.exists():
-        print(f"[WARN] Directory not found: {split_dir}")
-        print(f"       Download OhioT1DM dataset and place it at: {RAW_DIR}")
-        return pd.DataFrame()
+    pattern = f"*-ws-{split}.xml"
+    xml_files = sorted(RAW_DIR.glob(pattern))
 
-    xml_files = sorted(split_dir.glob("*.xml"))
     if not xml_files:
-        print(f"[WARN] No XML files found in {split_dir}")
+        print(f"[WARN] No files matching '{pattern}' in {RAW_DIR}")
         return pd.DataFrame()
 
     frames = []
@@ -265,7 +261,7 @@ def process_split(split: str) -> pd.DataFrame:
         frame = build_feature_frame(data, subject_id)
         if not frame.empty:
             frames.append(frame)
-            print(f"    → {len(frame)} rows, {frame.columns.tolist()}")
+            print(f"    → {len(frame)} rows")
         else:
             print(f"    → skipped (empty)")
 
