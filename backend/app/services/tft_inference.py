@@ -19,20 +19,20 @@ import torch
 
 log = logging.getLogger(__name__)
 
-ROOT      = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[3]
 MODEL_DIR = ROOT / "ml" / "models"
-DATA_DIR  = ROOT / "ml" / "data" / "processed"
+DATA_DIR = ROOT / "ml" / "data" / "processed"
 
-TARGET                      = "glucose_mg_dl"
-GROUP_ID                    = "subject_id"
-TIME_VARYING_KNOWN_REALS    = ["hour_sin", "hour_cos", "dow_sin", "dow_cos"]
-TIME_VARYING_UNKNOWN_REALS  = [TARGET, "glucose_delta_1", "glucose_delta_3",
+TARGET = "glucose_mg_dl"
+GROUP_ID = "subject_id"
+TIME_VARYING_KNOWN_REALS = ["hour_sin", "hour_cos", "dow_sin", "dow_cos"]
+TIME_VARYING_UNKNOWN_REALS = [TARGET, "glucose_delta_1", "glucose_delta_3",
                                "bolus_last_1h", "basal_rate", "carbs_last_1h"]  # noqa: E127
-STATIC_CATEGORICALS         = [GROUP_ID]
-HORIZON                     = 12
-CONTEXT                     = 48
+STATIC_CATEGORICALS = [GROUP_ID]
+HORIZON = 12
+CONTEXT = 48
 
-_model   = None
+_model = None
 _dataset = None
 
 
@@ -71,13 +71,14 @@ def _load_model():
         raw_ckpt = torch.load(str(ckpt), weights_only=False)
         hp = raw_ckpt.get("hyper_parameters", {})
         valid_keys = set(
-            inspect.signature(TemporalFusionTransformer.__init__).parameters.keys()
-        )
+            inspect.signature(
+                TemporalFusionTransformer.__init__).parameters.keys())
         unknown = [k for k in list(hp.keys()) if k not in valid_keys]
         if unknown:
             for k in unknown:
                 hp.pop(k)
-            log.info(f"[TFT] Patched checkpoint (removed unknown hp: {unknown})")
+            log.info(
+                f"[TFT] Patched checkpoint (removed unknown hp: {unknown})")
 
         tmp = tempfile.NamedTemporaryFile(suffix=".ckpt", delete=False)
         torch.save(raw_ckpt, tmp.name)
@@ -147,9 +148,9 @@ def predict_from_history(
         return ([0.0] * (n - len(v))) + list(v)
 
     glucose = glucose_values
-    bolus   = _pad(bolus_values)
-    basal   = _pad(basal_values)
-    carbs   = _pad(carbs_values)
+    bolus = _pad(bolus_values)
+    basal = _pad(basal_values)
+    carbs = _pad(carbs_values)
 
     delta1 = [0.0] + [glucose[i] - glucose[i - 1] for i in range(1, n)]
     delta3 = [0.0] * min(3, n) + [
@@ -160,50 +161,55 @@ def predict_from_history(
     timestamps = pd.date_range(end=pd.Timestamp.now(), periods=n, freq="5min")
     hour_sin = [math.sin(2 * math.pi * t.hour / 24) for t in timestamps]
     hour_cos = [math.cos(2 * math.pi * t.hour / 24) for t in timestamps]
-    dow_sin  = [math.sin(2 * math.pi * t.dayofweek / 7) for t in timestamps]
-    dow_cos  = [math.cos(2 * math.pi * t.dayofweek / 7) for t in timestamps]
+    dow_sin = [math.sin(2 * math.pi * t.dayofweek / 7) for t in timestamps]
+    dow_cos = [math.cos(2 * math.pi * t.dayofweek / 7) for t in timestamps]
 
     future_timestamps = pd.date_range(
         start=timestamps[-1] + pd.Timedelta("5min"),
         periods=HORIZON, freq="5min"
     )
-    future_hour_sin = [math.sin(2 * math.pi * t.hour / 24) for t in future_timestamps]
-    future_hour_cos = [math.cos(2 * math.pi * t.hour / 24) for t in future_timestamps]
-    future_dow_sin  = [math.sin(2 * math.pi * t.dayofweek / 7) for t in future_timestamps]
-    future_dow_cos  = [math.cos(2 * math.pi * t.dayofweek / 7) for t in future_timestamps]
+    future_hour_sin = [math.sin(2 * math.pi * t.hour / 24)
+                       for t in future_timestamps]
+    future_hour_cos = [math.cos(2 * math.pi * t.hour / 24)
+                       for t in future_timestamps]
+    future_dow_sin = [math.sin(2 * math.pi * t.dayofweek / 7)
+                      for t in future_timestamps]
+    future_dow_cos = [math.cos(2 * math.pi * t.dayofweek / 7)
+                      for t in future_timestamps]
 
     enc_rows = {
-        "timestamp":       list(timestamps),
-        "subject_id":      [subject_id] * n,
-        "time_idx":        list(range(n)),
-        "glucose_mg_dl":   [float(g) for g in glucose],
+        "timestamp": list(timestamps),
+        "subject_id": [subject_id] * n,
+        "time_idx": list(range(n)),
+        "glucose_mg_dl": [float(g) for g in glucose],
         "glucose_delta_1": delta1,
         "glucose_delta_3": delta3,
-        "bolus_last_1h":   bolus,
-        "basal_rate":      basal,
-        "carbs_last_1h":   carbs,
-        "hour_sin":        hour_sin,
-        "hour_cos":        hour_cos,
-        "dow_sin":         dow_sin,
-        "dow_cos":         dow_cos,
+        "bolus_last_1h": bolus,
+        "basal_rate": basal,
+        "carbs_last_1h": carbs,
+        "hour_sin": hour_sin,
+        "hour_cos": hour_cos,
+        "dow_sin": dow_sin,
+        "dow_cos": dow_cos,
     }
     dec_rows = {
-        "timestamp":       list(future_timestamps),
-        "subject_id":      [subject_id] * HORIZON,
-        "time_idx":        list(range(n, n + HORIZON)),
-        "glucose_mg_dl":   [float(glucose[-1])] * HORIZON,
+        "timestamp": list(future_timestamps),
+        "subject_id": [subject_id] * HORIZON,
+        "time_idx": list(range(n, n + HORIZON)),
+        "glucose_mg_dl": [float(glucose[-1])] * HORIZON,
         "glucose_delta_1": [0.0] * HORIZON,
         "glucose_delta_3": [0.0] * HORIZON,
-        "bolus_last_1h":   [0.0] * HORIZON,
-        "basal_rate":      [basal[-1]] * HORIZON,
-        "carbs_last_1h":   [0.0] * HORIZON,
-        "hour_sin":        future_hour_sin,
-        "hour_cos":        future_hour_cos,
-        "dow_sin":         future_dow_sin,
-        "dow_cos":         future_dow_cos,
+        "bolus_last_1h": [0.0] * HORIZON,
+        "basal_rate": [basal[-1]] * HORIZON,
+        "carbs_last_1h": [0.0] * HORIZON,
+        "hour_sin": future_hour_sin,
+        "hour_cos": future_hour_cos,
+        "dow_sin": future_dow_sin,
+        "dow_cos": future_dow_cos,
     }
 
-    df_pred = pd.DataFrame({**{k: enc_rows[k] + dec_rows[k] for k in enc_rows}})
+    df_pred = pd.DataFrame(
+        {**{k: enc_rows[k] + dec_rows[k] for k in enc_rows}})
     df_pred["subject_id"] = df_pred["subject_id"].astype(str)
 
     from pytorch_forecasting import TimeSeriesDataSet
@@ -211,7 +217,8 @@ def predict_from_history(
     pred_dataset = TimeSeriesDataSet.from_dataset(
         dataset, df_pred, predict=True, stop_randomization=True
     )
-    loader = pred_dataset.to_dataloader(train=False, batch_size=1, num_workers=0)
+    loader = pred_dataset.to_dataloader(
+        train=False, batch_size=1, num_workers=0)
 
     with torch.no_grad():
         raw_preds = model.predict(loader, mode="raw", return_x=False)
@@ -225,21 +232,21 @@ def predict_from_history(
         output = raw_preds
 
     if isinstance(output, torch.Tensor) and output.dim() == 3:
-        lower  = output[0, :, 0].tolist()
+        lower = output[0, :, 0].tolist()
         median = output[0, :, 1].tolist()
-        upper  = output[0, :, 2].tolist()
+        upper = output[0, :, 2].tolist()
     elif isinstance(output, torch.Tensor) and output.dim() == 2:
         median = output[0].tolist()
-        lower  = median
-        upper  = median
+        lower = median
+        upper = median
     else:
         median = output[0].tolist()
-        lower  = median
-        upper  = median
+        lower = median
+        upper = median
 
     return {
         "predictions_mg_dl": [round(v, 1) for v in median],
-        "lower_mg_dl":       [round(v, 1) for v in lower],
-        "upper_mg_dl":       [round(v, 1) for v in upper],
-        "horizon_minutes":   [i * 5 for i in range(1, HORIZON + 1)],
+        "lower_mg_dl": [round(v, 1) for v in lower],
+        "upper_mg_dl": [round(v, 1) for v in upper],
+        "horizon_minutes": [i * 5 for i in range(1, HORIZON + 1)],
     }
