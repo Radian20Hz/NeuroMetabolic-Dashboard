@@ -33,3 +33,7 @@ mlruns/
 # OS
 .DS_Store
 Thumbs.db
+.env
+lightning_logs/
+backend/lightning_logs/
+frontend/.env.production

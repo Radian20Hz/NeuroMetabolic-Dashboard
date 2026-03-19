@@ -43,7 +43,8 @@ class PredictRequest(BaseModel):
     @classmethod
     def validate_subject_id(cls, v: str) -> str:
         if v not in VALID_SUBJECT_IDS:
-            raise ValueError(f"Unknown subject_id '{v}'. Valid: {', '.join(sorted(VALID_SUBJECT_IDS))}.")
+            valid = ', '.join(sorted(VALID_SUBJECT_IDS))
+            raise ValueError(f"Unknown subject_id '{v}'. Valid: {valid}")
         return v
 
 

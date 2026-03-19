@@ -14,7 +14,6 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import torch
 
@@ -28,7 +27,7 @@ TARGET                      = "glucose_mg_dl"
 GROUP_ID                    = "subject_id"
 TIME_VARYING_KNOWN_REALS    = ["hour_sin", "hour_cos", "dow_sin", "dow_cos"]
 TIME_VARYING_UNKNOWN_REALS  = [TARGET, "glucose_delta_1", "glucose_delta_3",
-                                "bolus_last_1h", "basal_rate", "carbs_last_1h"]
+                               "bolus_last_1h", "basal_rate", "carbs_last_1h"]  # noqa: E127
 STATIC_CATEGORICALS         = [GROUP_ID]
 HORIZON                     = 12
 CONTEXT                     = 48
@@ -208,7 +207,6 @@ def predict_from_history(
     df_pred["subject_id"] = df_pred["subject_id"].astype(str)
 
     from pytorch_forecasting import TimeSeriesDataSet
-    from pytorch_forecasting.data import GroupNormalizer
 
     pred_dataset = TimeSeriesDataSet.from_dataset(
         dataset, df_pred, predict=True, stop_randomization=True
