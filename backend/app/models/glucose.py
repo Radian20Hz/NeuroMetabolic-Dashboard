@@ -27,7 +27,7 @@ class UploadResponse(BaseModel):
 
 class LatestReadingsResponse(BaseModel):
     status: str
-    hours_requested: int = Field(..., ge=1, le=168)
+    hours_requested: int = Field(..., ge=1, le=720)
     count: int = Field(..., ge=0)
     readings: list[GlucoseReadingResponse]
 

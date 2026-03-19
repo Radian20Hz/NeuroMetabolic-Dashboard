@@ -6,7 +6,7 @@ import { fetchLatestReadings } from './api/glucoseApi'
 import type { GlucoseReading, UploadResponse } from './types/glucose'
 
 const REFRESH_INTERVAL = 5 * 60 * 1000 // 5 minutes
-const HOUR_OPTIONS = [24, 72, 168] as const
+const HOUR_OPTIONS = [24, 72, 168, 720] as const
 
 function App() {
   const [readings, setReadings] = useState<GlucoseReading[]>([])
@@ -14,7 +14,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [hours, setHours] = useState<number>(72)
+  const [hours, setHours] = useState<number>(720)
 
   const loadData = useCallback(async () => {
     try {
