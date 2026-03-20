@@ -13,6 +13,7 @@ Zone E – erroneous treatment errors
 """
 from __future__ import annotations
 
+
 def classify_point(ref: float, pred: float) -> str:
     """Classify a single (reference, predicted) pair into Clarke zone A-E."""
     # Zone A: within 20% of reference, or both in hypoglycaemic range
@@ -61,7 +62,8 @@ def run_clarke_ega(
       - clinically_acceptable_percent: float  (zones A+B)
     """
     if len(reference_values) != len(predicted_values):
-        raise ValueError("reference and predicted lists must have equal length")
+        raise ValueError(
+            "reference and predicted lists must have equal length")
     if not reference_values:
         raise ValueError("empty input")
 
@@ -74,7 +76,8 @@ def run_clarke_ega(
         zone_counts[zone] += 1
 
     total = len(points)
-    zone_percents = {z: round(n / total * 100, 1) for z, n in zone_counts.items()}
+    zone_percents = {z: round(n / total * 100, 1)
+                     for z, n in zone_counts.items()}
     acceptable = zone_counts["A"] + zone_counts["B"]
 
     return {

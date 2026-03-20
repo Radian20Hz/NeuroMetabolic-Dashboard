@@ -16,16 +16,16 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
 
-
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173"]
 
     # InfluxDB
     INFLUXDB_URL: str = "http://localhost:8086"
     INFLUXDB_TOKEN: str = ""
     INFLUXDB_ORG: str = "nmd"
     INFLUXDB_BUCKET: str = "cgm_data"
-
 
     # CareLink
     CARELINK_USERNAME: str = ""
