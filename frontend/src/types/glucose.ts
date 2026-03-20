@@ -1,6 +1,3 @@
-// Shared TypeScript interfaces for NMD frontend
-// Mirrors backend Pydantic models in backend/app/models/glucose.py
-
 export interface GlucoseReading {
   timestamp: string
   glucose_mg_dl: number
@@ -46,7 +43,6 @@ export interface ClassifyResponse {
   message: string
 }
 
-// Derived stats shape used internally by StatsCards
 export interface ComputedStats {
   min_glucose: number
   max_glucose: number
@@ -57,4 +53,20 @@ export interface ComputedStats {
   cv_percent: number | null
   cv_is_stable: boolean | null
   count: number
+}
+
+export interface PredictionPoint {
+  minutes_ahead: number
+  glucose_mg_dl: number
+  lower_mg_dl: number
+  upper_mg_dl: number
+}
+
+export interface PredictResponse {
+  status: string
+  subject_id: string
+  horizon_steps: number
+  predictions: PredictionPoint[]
+  last_known_glucose: number
+  model_version: string
 }

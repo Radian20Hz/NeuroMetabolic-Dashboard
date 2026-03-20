@@ -84,7 +84,7 @@ async def get_latest_readings(
 ):
     """
     Get the latest glucose readings from InfluxDB.
-    Default: last 24 hours. Max: 168 hours (7 days).
+    Default: last 24 hours. Max: 720 hours (30 days).
     """
     if hours < 1 or hours > 720:
         raise HTTPException(

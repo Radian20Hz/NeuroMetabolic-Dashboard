@@ -32,34 +32,32 @@ function computeStatsFromReadings(data: GlucoseReading[]): ComputedStats | null 
 }
 
 function tirColor(tir: number): string {
-  if (tir >= 70) return '#86efac'
-  if (tir >= 50) return '#ffb085'
-  return '#fca5a5'
+  if (tir >= 70) return '#00ff88'
+  if (tir >= 50) return '#ffaa00'
+  return '#ff4444'
 }
 
-function cvColor(cv: number | null, stable: boolean | null): string {
-  if (cv === null || stable === null) return '#5a5480'
-  return stable ? '#86efac' : '#fca5a5'
-}
-
-function StatItem({
-  label,
-  value,
-  unit,
-  color,
-}: {
+interface MetricRowProps {
   label: string
   value: string | number | null
   unit?: string
   color?: string
-}) {
+  target?: string
+  status?: 'ok' | 'warn' | 'crit' | null
+}
+
+function MetricRow({ label, value, unit, color, target, status }: MetricRowProps) {
+  const statusColors = { ok: '#00ff88', warn: '#ffaa00', crit: '#ff4444' }
+  const sc = status ? statusColors[status] : undefined
+
   return (
-    <div className="stat-item">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={color ? { color } : undefined}>
+    <div className="metric-row">
+      <span className="metric-label">{label}</span>
+      <span className="metric-value" style={{ color: color ?? sc ?? '#e0e0e0' }}>
         {value ?? '—'}
-        {unit && value != null && <span className="stat-unit">{unit}</span>}
-      </div>
+        {unit && value != null && <span className="metric-unit"> {unit}</span>}
+      </span>
+      {target && <span className="metric-target">{target}</span>}
     </div>
   )
 }
@@ -81,96 +79,73 @@ function StatsCards({ readings, uploadStats }: StatsCardsProps) {
 
   if (!stats) {
     return (
-      <div
-        style={{
-          padding: 24,
-          color: '#5a5480',
-          fontSize: 14,
-          textAlign: 'center',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        Upload a CSV to see statistics
+      <div className="stats-empty">
+        <span className="stats-empty-icon">▣</span>
+        <span>NO DATA — upload CSV to compute metrics</span>
       </div>
     )
   }
 
   const tir = stats.time_in_range_percent
+  const tirStatus = tir >= 70 ? 'ok' : tir >= 50 ? 'warn' : 'crit'
+  const cvStatus = stats.cv_is_stable ? 'ok' : 'warn'
 
   return (
-    <div className="stats-grid">
-      <div className="section-label" style={{ gridColumn: 'span 2' }}>
-        Glycemic Statistics
+    <div className="stats-panel">
+      <div className="stats-group">
+        <div className="stats-group-label">GLUCOSE RANGE</div>
+        <MetricRow label="MIN" value={stats.min_glucose} unit="mg/dL"
+          color={stats.min_glucose < 70 ? '#ff4444' : '#888'} />
+        <MetricRow label="MAX" value={stats.max_glucose} unit="mg/dL"
+          color={stats.max_glucose > 180 ? '#ffaa00' : '#888'} />
+        <MetricRow label="AVG" value={stats.avg_glucose} unit="mg/dL" />
+        <MetricRow label="SD" value={stats.std_dev} unit="mg/dL" />
+        <MetricRow label="N" value={stats.count} />
       </div>
 
-      <StatItem label="Minimum" value={stats.min_glucose} unit="mg/dL" />
-      <StatItem label="Maximum" value={stats.max_glucose} unit="mg/dL" />
-      <StatItem label="Average" value={stats.avg_glucose} unit="mg/dL" />
-      <StatItem label="Readings" value={stats.count} />
+      <div className="stats-divider" />
 
-      {/* Std Dev */}
-      <StatItem label="Std Dev" value={stats.std_dev} unit="mg/dL" />
-
-      {/* GMI */}
-      <StatItem
-        label="GMI (est. HbA1c)"
-        value={stats.gmi !== null ? stats.gmi?.toFixed(2) : null}
-        unit="%"
-      />
-
-      {/* CV */}
-      <div className="stat-item" style={{ gridColumn: 'span 2' }}>
-        <div className="stat-label">
-          Coefficient of Variation
-          <span
-            style={{
-              marginLeft: 8,
-              fontSize: 10,
-              fontWeight: 700,
-              color: cvColor(stats.cv_percent, stats.cv_is_stable),
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-            }}
-          >
-            {stats.cv_is_stable === true
-              ? '✓ Stable'
-              : stats.cv_is_stable === false
-              ? '⚠ Unstable'
-              : ''}
-          </span>
-        </div>
-        <div className="stat-value" style={{ color: cvColor(stats.cv_percent, stats.cv_is_stable) }}>
-          {stats.cv_percent !== null ? `${stats.cv_percent}` : '—'}
-          {stats.cv_percent !== null && <span className="stat-unit">%</span>}
-        </div>
-        <div style={{ fontSize: 11, color: '#5a5480', marginTop: 4 }}>
-          Target: &lt;36% · ADA 2024
-        </div>
+      <div className="stats-group">
+        <div className="stats-group-label">CLINICAL INDICES</div>
+        <MetricRow
+          label="GMI"
+          value={stats.gmi?.toFixed(2) ?? null}
+          unit="%"
+          target="est. HbA1c"
+        />
+        <MetricRow
+          label="CV"
+          value={stats.cv_percent}
+          unit="%"
+          status={cvStatus}
+          target={stats.cv_is_stable ? '✓ STABLE' : '⚠ UNSTABLE'}
+        />
       </div>
 
-      {/* TIR bar */}
-      <div className="tir-bar-wrap">
-        <div className="tir-header">
-          <span className="tir-label">Time in Range</span>
-          <span className="tir-value" style={{ color: tirColor(tir) }}>
-            {tir}%
+      <div className="stats-divider" />
+
+      <div className="stats-group">
+        <div className="stats-group-label">TIME IN RANGE · ADA 2024</div>
+        <div className="tir-display">
+          <span className="tir-number" style={{ color: tirColor(tir) }}>
+            {tir}
+          </span>
+          <span className="tir-pct" style={{ color: tirColor(tir) }}>%</span>
+          <span className="tir-status" style={{ color: tirColor(tir) }}>
+            {tirStatus === 'ok' ? '↑ TARGET MET' : tirStatus === 'warn' ? '→ SUBOPTIMAL' : '↓ BELOW TARGET'}
           </span>
         </div>
-        <div className="tir-bar-bg">
+        <div className="tir-bar-track">
           <div
             className="tir-bar-fill"
             style={{
               width: `${tir}%`,
-              background: `linear-gradient(90deg, ${tirColor(tir)}88, ${tirColor(tir)})`,
+              background: tirColor(tir),
             }}
           />
+          <div className="tir-target-line" style={{ left: '70%' }} />
         </div>
-        <div style={{ fontSize: 11, color: '#5a5480', marginTop: 8 }}>
-          Target: ≥70% · ADA 2024
-        </div>
+        <div className="tir-footnote">Target ≥70% · {stats.count} readings</div>
       </div>
     </div>
   )

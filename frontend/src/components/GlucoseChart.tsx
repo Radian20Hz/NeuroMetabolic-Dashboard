@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import {
-  LineChart,
+  ComposedChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -10,10 +12,16 @@ import {
 } from 'recharts'
 import type { TooltipProps } from 'recharts'
 import type { GlucoseReading } from '../types/glucose'
+import { fetchPrediction } from '../api/glucoseApi'
+import type { PredictionPoint } from '../types/glucose'
 
 interface ChartPoint {
   time: string
-  glucose: number
+  timestamp: number
+  glucose?: number
+  pred?: number
+  lower?: number
+  upper?: number
 }
 
 const formatTime = (timestamp: string): string => {
@@ -21,25 +29,32 @@ const formatTime = (timestamp: string): string => {
   return date.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
 }
 
-const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+interface TooltipEntry {
+  dataKey?: string | number
+  value?: number | string | Array<number | string>
+  payload?: ChartPoint
+}
+
+interface CustomTooltipProps { active?: boolean; payload?: TooltipEntry[] }
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (!active || !payload?.length) return null
-  const val = payload[0].value as number
-  const color = val < 70 ? '#fca5a5' : val > 180 ? '#ffb085' : '#86efac'
+  const entries = payload as TooltipEntry[]
+  const glucose = entries.find((p) => p.dataKey === 'glucose')?.value as number | undefined
+  const pred = entries.find((p) => p.dataKey === 'pred')?.value as number | undefined
+  const val = glucose ?? pred
+  if (val == null) return null
+
+  const color = val < 70 ? 'var(--red)' : val > 180 ? 'var(--amber)' : 'var(--green)'
+  const time = entries[0]?.payload?.time ?? ''
 
   return (
-    <div style={{
-      background: 'rgba(20,18,40,0.97)',
-      border: '1px solid rgba(180,150,255,0.25)',
-      borderRadius: 12,
-      padding: '10px 14px',
-      fontFamily: 'Outfit, sans-serif',
-    }}>
-      <div style={{ fontSize: 11, color: '#5a5480', marginBottom: 4 }}>
-        {(payload[0].payload as ChartPoint).time}
+    <div className="chart-tooltip">
+      <div className="tooltip-time">{time}</div>
+      <div className="tooltip-value" style={{ color }}>
+        {Math.round(val)}
+        <span className="tooltip-unit"> mg/dL</span>
       </div>
-      <div style={{ fontSize: 20, fontWeight: 600, color, fontFamily: 'DM Mono, monospace' }}>
-        {val} <span style={{ fontSize: 12, color: '#5a5480' }}>mg/dL</span>
-      </div>
+      {pred != null && <div className="tooltip-tag">Predicted</div>}
     </div>
   )
 }
@@ -49,83 +64,155 @@ interface GlucoseChartProps {
 }
 
 function GlucoseChart({ readings }: GlucoseChartProps) {
+  const [predicting, setPredicting] = useState(false)
+  const [predictions, setPredictions] = useState<PredictionPoint[] | null>(null)
+  const [predError, setPredError] = useState<string | null>(null)
+
+  const handlePredict = async () => {
+    if (readings.length < 24) {
+      setPredError('Need at least 24 readings (2h of data) to generate a forecast.')
+      return
+    }
+    setPredicting(true)
+    setPredError(null)
+    try {
+      const recent = readings.slice(-48).map((r) => r.glucose_mg_dl)
+      const result = await fetchPrediction(recent)
+      setPredictions(result.predictions)
+    } catch {
+      setPredError('Forecast failed — check backend.')
+    } finally {
+      setPredicting(false)
+    }
+  }
+
   if (!readings || readings.length === 0) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 320,
-        color: '#5a5480',
-        fontSize: 14,
-        fontFamily: 'Outfit, sans-serif',
-      }}>
-        No glucose data available
+      <div className="chart-empty">
+        <span className="chart-empty-icon">📈</span>
+        <span>No data — upload a CareLink CSV to visualize glucose</span>
       </div>
     )
   }
 
-  const data: ChartPoint[] = readings.map((r) => ({
+  const histData: ChartPoint[] = readings.slice(-288).map((r) => ({
     time: formatTime(r.timestamp),
+    timestamp: new Date(r.timestamp).getTime(),
     glucose: Math.round(r.glucose_mg_dl),
   }))
 
+  let allData = [...histData]
+  if (predictions) {
+    const lastTs = histData[histData.length - 1].timestamp
+    allData[allData.length - 1] = {
+      ...allData[allData.length - 1],
+      pred: allData[allData.length - 1].glucose,
+      lower: allData[allData.length - 1].glucose,
+      upper: allData[allData.length - 1].glucose,
+    }
+    const predPoints: ChartPoint[] = predictions.map((p) => ({
+      time: formatTime(new Date(lastTs + p.minutes_ahead * 60000).toISOString()),
+      timestamp: lastTs + p.minutes_ahead * 60000,
+      pred: Math.round(p.glucose_mg_dl),
+      lower: Math.round(p.lower_mg_dl),
+      upper: Math.round(p.upper_mg_dl),
+    }))
+    allData = [...allData, ...predPoints]
+  }
+
+  const tickInterval = Math.max(1, Math.floor(allData.length / 8))
+
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <div className="section-label">CGM Glucose Trace</div>
-          <div style={{ fontSize: 13, color: '#5a5480' }}>{readings.length} readings</div>
+    <div className="chart-wrap">
+      <div className="chart-controls">
+        <div className="chart-legend">
+          <div className="legend-item">
+            <span className="legend-line" style={{ background: 'var(--green)' }} />
+            <span>CGM reading</span>
+          </div>
+          {predictions && (
+            <div className="legend-item">
+              <span className="legend-line" style={{ background: 'var(--blue)', opacity: 0.7 }} />
+              <span>TFT forecast · 60 min</span>
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#5a5480' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 20, height: 2, background: '#fca5a5', display: 'inline-block', borderRadius: 2 }} />
-            Hypo &lt;70
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 20, height: 2, background: '#ffb085', display: 'inline-block', borderRadius: 2 }} />
-            Hyper &gt;180
-          </span>
-        </div>
+        <button
+          className="predict-btn"
+          onClick={handlePredict}
+          disabled={predicting || readings.length < 24}
+        >
+          {predicting ? '⟳ Forecasting…' : predictions ? '↺ Refresh Forecast' : '✦ Run AI Forecast'}
+        </button>
       </div>
 
+      {predError && <div className="pred-error">{predError}</div>}
+
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+        <ComposedChart data={allData} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
           <defs>
-            <linearGradient id="glucoseLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#b49dff" />
-              <stop offset="50%" stopColor="#7dd3fc" />
-              <stop offset="100%" stopColor="#86efac" />
+            <linearGradient id="glucoseGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--green)" stopOpacity={0.15} />
+              <stop offset="100%" stopColor="var(--green)" stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="ciGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--blue)" stopOpacity={0.12} />
+              <stop offset="100%" stopColor="var(--blue)" stopOpacity={0.03} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+
+          <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+
           <XAxis
             dataKey="time"
-            tick={{ fill: '#5a5480', fontSize: 11, fontFamily: 'DM Mono' }}
+            tick={{ fill: '#aeaeb2', fontSize: 11, fontFamily: 'DM Sans, sans-serif' }}
             axisLine={false}
             tickLine={false}
-            interval="preserveStartEnd"
+            interval={tickInterval}
           />
           <YAxis
             domain={[40, 400]}
-            tick={{ fill: '#5a5480', fontSize: 11, fontFamily: 'DM Mono' }}
+            tick={{ fill: '#aeaeb2', fontSize: 11, fontFamily: 'DM Sans, sans-serif' }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(v: number) => `${v}`}
-            width={36}
+            width={32}
           />
+
           <Tooltip content={<CustomTooltip />} />
-          <ReferenceLine y={70} stroke="#fca5a5" strokeDasharray="4 4" strokeOpacity={0.6} />
-          <ReferenceLine y={180} stroke="#ffb085" strokeDasharray="4 4" strokeOpacity={0.6} />
+
+          <ReferenceLine y={70} stroke="var(--red)" strokeDasharray="4 4" strokeOpacity={0.4} strokeWidth={1} />
+          <ReferenceLine y={180} stroke="var(--amber)" strokeDasharray="4 4" strokeOpacity={0.4} strokeWidth={1} />
+
+          {predictions && (
+            <Area dataKey="upper" stroke="none" fill="url(#ciGrad)" legendType="none" connectNulls />
+          )}
+          {predictions && (
+            <Area dataKey="lower" stroke="none" fill="transparent" legendType="none" connectNulls />
+          )}
+
           <Line
             type="monotone"
             dataKey="glucose"
-            stroke="url(#glucoseLine)"
-            strokeWidth={2.5}
+            stroke="var(--green)"
+            strokeWidth={2}
             dot={false}
-            activeDot={{ r: 5, fill: '#b49dff', stroke: '#0d0d1a', strokeWidth: 2 }}
+            activeDot={{ r: 4, fill: 'var(--green)', stroke: 'white', strokeWidth: 2 }}
+            connectNulls
           />
-        </LineChart>
+
+          {predictions && (
+            <Line
+              type="monotone"
+              dataKey="pred"
+              stroke="var(--blue)"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              dot={false}
+              activeDot={{ r: 4, fill: 'var(--blue)', stroke: 'white', strokeWidth: 2 }}
+              connectNulls
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   )

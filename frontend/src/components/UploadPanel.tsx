@@ -32,13 +32,12 @@ function UploadPanel({ onSuccess }: UploadPanelProps) {
     setUploading(true)
     setError(null)
     setResult(null)
-
     try {
       const data = await uploadCsv(file)
       setResult(data)
       onSuccess(data)
     } catch {
-      setError('Upload failed. Check if the file is a valid CareLink CSV.')
+      setError('PARSE_ERROR: invalid CareLink CSV format')
     } finally {
       setUploading(false)
     }
@@ -46,22 +45,13 @@ function UploadPanel({ onSuccess }: UploadPanelProps) {
 
   return (
     <div className="upload-panel">
-      <div className="section-label">Import CareLink CSV</div>
-
       <div
-        className={`upload-dropzone ${dragOver ? 'drag-over' : ''}`}
+        className={`upload-zone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
       >
-        <div className="upload-icon">📂</div>
-        <div className="upload-text">
-          {file ? file.name : 'Drop CSV file here'}
-        </div>
-        <div className="upload-hint">
-          {file ? `${(file.size / 1024).toFixed(1)} KB` : 'or click to browse'}
-        </div>
         <input
           ref={inputRef}
           type="file"
@@ -69,59 +59,76 @@ function UploadPanel({ onSuccess }: UploadPanelProps) {
           style={{ display: 'none' }}
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
+        <div className="upload-zone-inner">
+          <span className="upload-zone-icon">{file ? '◉' : '○'}</span>
+          <span className="upload-zone-text">
+            {file ? file.name : 'DROP CARELINK CSV'}
+          </span>
+          <span className="upload-zone-sub">
+            {file ? `${(file.size / 1024).toFixed(1)} KB · READY` : 'or click to browse'}
+          </span>
+        </div>
       </div>
 
       <button
-        className="upload-btn"
+        className={`upload-btn ${uploading ? 'uploading' : ''}`}
         onClick={handleUpload}
         disabled={!file || uploading}
       >
-        {uploading ? 'Uploading...' : 'Upload & Analyze'}
+        {uploading ? (
+          <><span className="upload-spinner">◌</span> PROCESSING...</>
+        ) : (
+          '▶ UPLOAD & PARSE'
+        )}
       </button>
 
       {result && (
         <div className="upload-result">
-          <div className="upload-result-row">
-            <span className="upload-result-key">Readings saved</span>
-            <span>{result.readings_saved}</span>
+          <div className="upload-result-header">
+            <span className="upload-ok">✓</span> IMPORT COMPLETE
           </div>
-          {result.avg_glucose != null && (
-            <div className="upload-result-row">
-              <span className="upload-result-key">Average glucose</span>
-              <span>{Math.round(result.avg_glucose)} mg/dL</span>
-            </div>
-          )}
-          {result.time_in_range_percent != null && (
-            <div className="upload-result-row">
-              <span className="upload-result-key">Time in Range</span>
-              <span>{result.time_in_range_percent}%</span>
-            </div>
-          )}
-          {result.gmi != null && (
-            <div className="upload-result-row">
-              <span className="upload-result-key">GMI</span>
-              <span>{result.gmi.toFixed(2)}%</span>
-            </div>
-          )}
-          {result.cv_percent != null && (
-            <div className="upload-result-row">
-              <span className="upload-result-key">CV</span>
-              <span
-                style={{ color: result.cv_is_stable ? '#86efac' : '#fca5a5' }}
-              >
-                {result.cv_percent}%
-                {result.cv_is_stable != null && (
-                  <span style={{ marginLeft: 6, fontSize: 11 }}>
-                    {result.cv_is_stable ? '✓ Stable' : '⚠ Unstable'}
-                  </span>
-                )}
-              </span>
-            </div>
-          )}
+          <div className="upload-result-grid">
+            <span className="res-key">READINGS</span>
+            <span className="res-val">{result.readings_saved}</span>
+            {result.avg_glucose != null && (
+              <>
+                <span className="res-key">AVG</span>
+                <span className="res-val">{Math.round(result.avg_glucose)} mg/dL</span>
+              </>
+            )}
+            {result.time_in_range_percent != null && (
+              <>
+                <span className="res-key">TIR</span>
+                <span className="res-val" style={{
+                  color: result.time_in_range_percent >= 70 ? '#00ff88' : '#ffaa00'
+                }}>{result.time_in_range_percent}%</span>
+              </>
+            )}
+            {result.gmi != null && (
+              <>
+                <span className="res-key">GMI</span>
+                <span className="res-val">{result.gmi.toFixed(2)}%</span>
+              </>
+            )}
+            {result.cv_percent != null && (
+              <>
+                <span className="res-key">CV</span>
+                <span className="res-val" style={{
+                  color: result.cv_is_stable ? '#00ff88' : '#ffaa00'
+                }}>
+                  {result.cv_percent}% {result.cv_is_stable ? '✓' : '⚠'}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {error && <div className="upload-error">{error}</div>}
+      {error && (
+        <div className="upload-error">
+          <span className="error-prefix">!</span> {error}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,0 +1,3 @@
+lightning_logs/
+backend/lightning_logs/
+frontend/.env.production

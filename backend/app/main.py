@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.glucose import router as glucose_router
 from app.api.predict import router as predict_router
+from app.api.clarke import router as clarke_router
 from app.core.config import settings
 from app.services.carelink_scraper import CareLinkScraper
 from app.services.influxdb_service import get_influxdb
@@ -100,3 +101,4 @@ async def health_check():
 
 app.include_router(glucose_router, prefix="/api/v1")
 app.include_router(predict_router, prefix="/api/v1")
+app.include_router(clarke_router, prefix="/api/v1")

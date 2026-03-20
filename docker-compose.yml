@@ -29,6 +29,8 @@ services:
       INFLUXDB_BUCKET: glucose_data
       CARELINK_USERNAME: ${CARELINK_USERNAME}
       CARELINK_PASSWORD: ${CARELINK_PASSWORD}
+    volumes:
+      - ./ml:/ml:ro
     depends_on:
       - influxdb
     restart: unless-stopped

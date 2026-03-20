@@ -55,6 +55,7 @@ class InfluxDBService:
             {
                 "timestamp": record.get_time().isoformat(),
                 "glucose_mg_dl": record.get_value(),
+                "units": record.values.get("units", "mg/dL"),
             }
             for table in tables
             for record in table.records

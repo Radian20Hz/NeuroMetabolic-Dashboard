@@ -16,10 +16,6 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
 
-    # Security
-    SECRET_KEY: str = "change-this-in-production"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    ALGORITHM: str = "HS256"
 
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
@@ -30,8 +26,6 @@ class Settings(BaseSettings):
     INFLUXDB_ORG: str = "nmd"
     INFLUXDB_BUCKET: str = "cgm_data"
 
-    # MLflow
-    MLFLOW_TRACKING_URI: str = "http://localhost:5000"
 
     # CareLink
     CARELINK_USERNAME: str = ""

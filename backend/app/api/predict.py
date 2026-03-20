@@ -71,6 +71,7 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
     Returns median + 80% confidence interval from TFT model.
     """
     try:
+        # Lazy import: avoids loading TFT model at startup (heavy, ~2GB)
         from app.services.tft_inference import predict_from_history
         result = predict_from_history(
             glucose_values=request.glucose_mg_dl,
