@@ -1,13 +1,13 @@
 # 🧠 NeuroMetabolic Dashboard (NMD)
 
-> AI-driven decision-support system for Type 1 Diabetes management — predicting glycemic trends using Temporal Fusion Transformers and closed-loop pump data.
+> AI-driven decision-support system for Type 1 Diabetes management — predicting glycemic trends using Temporal Fusion Transformers and real closed-loop pump data.
 
 [![CI](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard/actions)
-[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active%20Development-orange)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard)
+[![Status](https://img.shields.io/badge/Status-Phase%203%20Complete-green)](https://github.com/Radian20Hz/NeuroMetabolic-Dashboard)
 
-> 🚧 **Active Development** — Phase 2 complete, Phase 3 in progress (Q2 2026). This repository documents a 24-month engineering journey toward a production-ready clinical decision-support tool.
+> **Phase 3 complete.** The TFT inference pipeline, Clarke Error Grid evaluator, and full-stack dashboard are live and running on real CGM data from a Medtronic 780G.
 
 ---
 
@@ -15,20 +15,21 @@
 
 This project is built by a T1D patient, not just *for* T1D patients.
 
-The developer wears a **Medtronic 780G closed-loop insulin pump** every day — which means this is not an academic exercise. The data this system processes is the same data that determines insulin delivery in real life. That personal stake is what drives the engineering decisions: precision over convenience, explainability over black-box accuracy, and patient safety above all else.
+The developer wears a **Medtronic 780G closed-loop insulin pump** every day — which means this is not an academic exercise. The data this system processes is the same data that determines insulin delivery in real life. That personal stake drives every engineering decision: precision over convenience, explainability over black-box accuracy, patient safety above all else.
 
 ---
 
-## 📌 Overview
+## 📌 What it does
 
-The **NeuroMetabolic Dashboard** integrates real-time CGM data from the **Medtronic 780G** closed-loop system with a **Temporal Fusion Transformer (TFT)** model to provide:
+The **NeuroMetabolic Dashboard** integrates real-time CGM data from the Medtronic 780G with a **Temporal Fusion Transformer (TFT)** model to provide:
 
-- 📈 High-precision **blood glucose predictions** (up to 60-min horizon)
-- 🔬 **"What-If" metabolic simulator** — visualize the impact of meals and exercise *before* they happen
-- 🚨 **Proactive alert system** — 20-minute lead time before predicted hypoglycemia
-- 🧩 **Explainable AI (XAI)** — TFT attention maps for variable importance visualization
+- 📈 **60-minute glucose forecasting** — 12 × 5-min steps with 10th/50th/90th quantile confidence intervals
+- 🔬 **Clarke Error Grid Analysis** — deterministic zone classification (A–E) per Clarke et al. 1987
+- 📊 **ADA 2024 glycemic metrics** — TIR, GMI, CV, std dev computed on real pump data
+- 🩺 **Clinical zone classification** — ADA 2024 hypoglycemia/hyperglycemia thresholds
+- 📥 **CareLink CSV ingestion** — parses real Medtronic 780G export format
 
-> ⚠️ **Medical Disclaimer:** NMD is a decision-support tool only. It is not a replacement for professional medical advice or automated insulin delivery (AID) logic.
+> ⚠️ **Medical Disclaimer:** NMD is a decision-support research tool only. It is not a replacement for professional medical advice or automated insulin delivery (AID) logic.
 
 ---
 
@@ -36,15 +37,14 @@ The **NeuroMetabolic Dashboard** integrates real-time CGM data from the **Medtro
 
 ```mermaid
 graph TD
-  A[Medtronic 780G Pump] -->|Bluetooth| B[MiniMed Mobile App]
-  B -->|HTTPS| C[CareLink Cloud]
-  C -->|API Scraper / CSV Fallback| D[Data Ingestion Service]
-  D --> E[(InfluxDB 2.7)]
-  E --> F[TFT Model — PyTorch/MLflow]
-  F -->|Model Export| G[ONNX Runtime — Edge AI]
-  H[User Inputs: Meals/Activity] --> G
-  G --> I[React Dashboard UI]
-  I -->|Visual Feedback| J[Patient]
+  A[Medtronic 780G Pump] -->|CareLink CSV Export| B[CareLink Parser]
+  B --> C[(InfluxDB 2.7)]
+  C --> D[FastAPI Backend]
+  D --> E[TFT Inference Service]
+  E --> F[POST /api/v1/predict]
+  F --> G[React Dashboard]
+  D --> H[POST /api/v1/clarke]
+  H --> G
 ```
 
 ---
@@ -53,15 +53,13 @@ graph TD
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Python 3.12, FastAPI |
+| **Backend** | Python 3.11, FastAPI |
 | **Database** | InfluxDB 2.7 (time-series) |
-| **ML Framework** | PyTorch, Temporal Fusion Transformer |
-| **Inference** | ONNX Runtime (Edge AI) |
-| **Frontend** | React 18, TypeScript, Tailwind CSS, Recharts |
-| **MLOps** | MLflow, DVC |
-| **CI/CD** | GitHub Actions, Flake8, MyPy, PyTest |
+| **ML Model** | PyTorch, Temporal Fusion Transformer (pytorch-forecasting) |
+| **Inference** | `.ckpt` checkpoint — ONNX export abandoned (data-dependent symbolic shapes) |
+| **Frontend** | React 19, TypeScript, Recharts, Tailwind CSS |
+| **CI/CD** | GitHub Actions, flake8 |
 | **Containerization** | Docker, Docker Compose |
-| **Security** | OAuth2 + JWT, AES-256 |
 
 ---
 
@@ -69,86 +67,78 @@ graph TD
 
 ```
 neurometabolic-dashboard/
-├── backend/                  # FastAPI application
+├── backend/
 │   ├── app/
-│   │   ├── api/              # Route handlers
-│   │   ├── core/             # Config, security, dependencies
+│   │   ├── api/              # Route handlers (glucose, predict, clarke)
+│   │   ├── core/             # Config, pydantic-settings
 │   │   ├── models/           # Pydantic schemas
 │   │   └── services/         # Business logic
+│   │       ├── carelink_parser.py
+│   │       ├── carelink_scraper.py
+│   │       ├── clarke_egz.py       # Clarke EGA classifier
+│   │       ├── glucose_validator.py
+│   │       ├── influxdb_service.py
+│   │       └── tft_inference.py    # TFT inference service
 │   └── tests/
-│       └── unit/             # 45 tests — all passing
-├── frontend/                 # React + TypeScript dashboard
+├── frontend/
 │   └── src/
-│       ├── api/              # Axios API client
-│       ├── components/       # GlucoseChart, StatsCards, UploadPanel
-│       ├── hooks/            # useGlucoseData
-│       └── types/            # Shared TypeScript interfaces
-├── ml/                       # ML pipeline (Phase 3)
-│   ├── data/
-│   │   ├── raw/              # OhioT1DM dataset (gitignored)
-│   │   └── processed/        # Normalized features
-│   ├── scripts/              # Preprocessing & training
-│   └── notebooks/            # Exploratory analysis
-├── docker-compose.yml        # InfluxDB local setup
-└── .github/
-    └── workflows/            # CI/CD pipelines
+│       ├── components/
+│       │   ├── ClarkeErrorGrid.tsx
+│       │   ├── GlucoseChart.tsx    # CGM trace + TFT forecast overlay
+│       │   ├── StatsCards.tsx
+│       │   └── UploadPanel.tsx
+│       ├── api/
+│       └── types/
+├── ml/
+│   ├── data/processed/       # training.parquet (OhioT1DM, gitignored)
+│   ├── models/               # TFT checkpoints (gitignored)
+│   └── scripts/              # Training & preprocessing
+├── docker-compose.yml
+└── .github/workflows/ci.yml
 ```
 
 ---
 
 ## ✅ Progress
 
-### Phase 1 — ETL Pipeline ✅ Complete
+### Phase 1 — ETL Pipeline ✅
+- CareLink CSV parser — real Medtronic 780G export format
+- InfluxDB service — write/query glucose time-series
+- REST API — `/upload`, `/latest`, `/classify`, `/statistics`
+- GitHub Actions CI/CD (flake8 + pytest)
+- 36 unit tests — all passing
 
-- [x] CareLink CSV parser — handles real Medtronic 780G export format
-- [x] InfluxDB service — write and query glucose time-series data
-- [x] REST API — `/upload`, `/latest` endpoints
-- [x] Pydantic response models
-- [x] GitHub Actions CI/CD pipeline (flake8 + mypy + pytest)
+### Phase 2 — Clinical Intelligence Layer ✅
+- Glucose Validator — ADA 2024 clinical zone classification
+- Glycemic statistics engine: TIR, GMI (Bergenstal et al. 2018), CV
+- Docker Compose stack — end-to-end pipeline with real pump data
+- CareLink API scraper (auth flow in progress)
 
-### Phase 2 — Clinical Intelligence Layer ✅ Complete
+### Phase 3 — TFT Model + Inference ✅
+- OhioT1DM dataset preprocessing — 85,896 samples, 6 subjects, 14 features
+- TFT training — `val_loss=1.710`, **MARD=1.09%**
+- ONNX export attempted → abandoned (`GuardOnDataDependentSymNode` in TFT encoder)
+- FastAPI `/predict` endpoint — 60-min forecast, quantile output
+- Clarke Error Grid Analysis — `POST /api/v1/clarke`, zones A–E
+- Full-stack dashboard — CGM trace + forecast overlay + Clarke scatter plot
 
-- [x] Glucose Validator — ADA 2024 clinical zone classification (5 zones)
-- [x] Time-in-Range (TIR) calculator — ADA target: >70%
-- [x] GMI (Glucose Management Indicator) — Bergenstal 2018 formula
-- [x] CV (Coefficient of Variation) — stability flag at <36% threshold
-- [x] Full glycemic statistics engine (min/max/avg/std\_dev/TIR/GMI/CV)
-- [x] `/classify` endpoint — single reading ADA zone classification
-- [x] `/statistics` endpoint — full CSV statistical analysis
-- [x] `/scrape` endpoint — live CareLink EU API ingestion
-- [x] Background auto-fetch task (5 min interval, 60 min token cache)
-- [x] InfluxDB singleton — connection pooling via FastAPI Depends()
-- [x] Stats enrichment on upload response
-- [x] React frontend — GlucoseChart, StatsCards, UploadPanel
-- [x] **45 unit tests — all passing**
-
-### Phase 3 — TFT Model 🔄 In Progress
-
-- [x] ML pipeline directory scaffold
-- [x] OhioT1DM dataset preprocessing script
-- [ ] Feature engineering (IOB, CHO, activity windows)
-- [ ] TFT architecture implementation (PyTorch)
-- [ ] MLflow experiment tracking
-- [ ] ONNX export for edge inference
-- [ ] MARD validation < 10%
-
-### Phase 4 — Production Hardening 📅 Planned (Q1 2027)
-
-- [ ] "What-If" metabolic simulator UI
-- [ ] Proactive hypoglycemia alert system (20 min lead time)
-- [ ] XAI — TFT attention map visualization
-- [ ] Bilingual documentation (EN/JP)
+### Phase 4 — Multi-patient Generalization 📅
+- Subject-agnostic inference (currently requires OhioT1DM subject ID)
+- Proactive hypoglycemia alert system (20-min lead time)
+- "What-If" metabolic simulator — meal/activity impact visualization
+- Nightscout integration — live CGM data ingestion
 
 ---
 
-## 🚀 Roadmap
+## 📊 Model Validation
 
-| Phase | Timeline | Focus | Status |
-|---|---|---|---|
-| **Phase 1** | Q1–Q2 2026 | ETL pipeline + REST API | ✅ Complete |
-| **Phase 2** | Q2 2026 | Clinical intelligence layer | ✅ Complete |
-| **Phase 3** | Q3–Q4 2026 | TFT model + ONNX inference | 🔄 In Progress |
-| **Phase 4** | Q1 2027 | Frontend + production hardening | 📅 Planned |
+| Metric | Target | Achieved |
+|---|---|---|
+| **MARD** | < 10% | **1.09%** ✅ |
+| **Clarke EGA zones A+B** | > 95% | Evaluated per session |
+| **val_loss (QuantileLoss)** | — | **1.710** |
+
+Model: `tft-epoch=47-val_loss=1.7104.ckpt` — trained on OhioT1DM (subjects 559, 563, 570, 575, 588, 591).
 
 ---
 
@@ -156,74 +146,57 @@ neurometabolic-dashboard/
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.11+
 - Docker + Docker Compose
-- Node.js 18+
+- Node.js 20+
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone https://github.com/Radian20Hz/NeuroMetabolic-Dashboard.git
-cd neurometabolic-dashboard
+cd NeuroMetabolic-Dashboard
 
-# Start InfluxDB
+# Start full stack (InfluxDB + backend + frontend)
 docker compose up -d
 
-# Backend setup
+# Or run backend locally
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 
-# Create .env file
-cp .env.example .env  # fill in your InfluxDB credentials
+cp .env.example .env  # fill in InfluxDB credentials
 
-# Frontend setup
-cd ../frontend
-npm install
-npm run dev
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Running locally
+API docs: `http://localhost:8000/docs`
 
-```bash
-# Backend — http://localhost:8000/docs
-cd backend && uvicorn app.main:app --reload
-
-# Frontend — http://localhost:5173
-cd frontend && npm run dev
-
-# InfluxDB UI — http://localhost:8086
-docker compose up -d
-```
+Frontend: `http://localhost:3000`
 
 ### Running tests
 
 ```bash
 cd backend
-pytest tests/unit/ -v
-# Expected: 45 passed
+pytest tests/ -v
 ```
 
+### TFT Inference
+
+The TFT model requires:
+1. Checkpoint in `ml/models/tft-*.ckpt`
+2. Reference dataset in `ml/data/processed/training.parquet`
+3. `ml/` volume mounted in Docker (see `docker-compose.yml`)
+
+Subject IDs must match OhioT1DM training set: `559, 563, 570, 575, 588, 591`.
+
 ---
 
-## 📊 Model Validation Targets
+## 🔒 Data Privacy
 
-| Metric | Target |
-|---|---|
-| **MARD** (Mean Absolute Relative Difference) | < 10% |
-| **Clarke Error Grid** zones A+B | > 95% |
-| **Time-in-Range** prediction accuracy | > 90% |
-
----
-
-## 🔒 Data Privacy & Compliance
-
-- **GDPR/RODO compliant** — full de-identification at the extraction layer
-- **OhioT1DM Dataset** — fully de-identified academic benchmark dataset
-- **AES-256** encryption for data at rest
-- **OAuth2 + JWT** for stateless authentication
+- **OhioT1DM Dataset** — fully de-identified academic benchmark
+- Personal CGM data never committed to repository
+- InfluxDB credentials stored in `.env` (gitignored)
 
 ---
 
@@ -233,4 +206,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-*Built with ❤️ for the T1D community.*
+*Built by a 16-year-old T1D developer from Poland. Long-term goal: MEXT Embassy Track Scholarship 2028 — Biomedical Engineering in Japan.*
