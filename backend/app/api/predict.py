@@ -26,9 +26,9 @@ class PredictRequest(BaseModel):
     bolus_last_1h: Optional[list[float]] = Field(None)
     basal_rate: Optional[list[float]] = Field(None)
     carbs_last_1h: Optional[list[float]] = Field(None)
-    subject_id: str = Field(
-        "559",
-        description=f"Patient identifier. Valid: {', '.join(sorted(VALID_SUBJECT_IDS))}.",
+    subject_id: str | None = Field(
+        None,
+        description="Patient identifier. Valid: 559, 563, 570, 575, 588, 591. If None, auto-matched from glucose profile.",
     )
 
     @field_validator("glucose_mg_dl")
@@ -39,13 +39,6 @@ class PredictRequest(BaseModel):
                 raise ValueError(f"Glucose value {val} mg/dL out of range (20–600).")
         return v
 
-    @field_validator("subject_id")
-    @classmethod
-    def validate_subject_id(cls, v: str) -> str:
-        if v not in VALID_SUBJECT_IDS:
-            valid = ', '.join(sorted(VALID_SUBJECT_IDS))
-            raise ValueError(f"Unknown subject_id '{v}'. Valid: {valid}")
-        return v
 
 
 class PredictionPoint(BaseModel):
@@ -73,12 +66,16 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
     try:
         # Lazy import: avoids loading TFT model at startup (heavy, ~2GB)
         from app.services.tft_inference import predict_from_history
+        from app.services.subject_matcher import match_subject_from_readings
+        subject_id = request.subject_id
+        if subject_id is None:
+            subject_id, _ = match_subject_from_readings(list(request.glucose_mg_dl))
         result = predict_from_history(
             glucose_values=request.glucose_mg_dl,
             bolus_values=request.bolus_last_1h,
             basal_values=request.basal_rate,
             carbs_values=request.carbs_last_1h,
-            subject_id=request.subject_id,
+            subject_id=subject_id,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=f"Model not available: {e}")
@@ -96,7 +93,7 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
     ]
 
     return PredictResponse(
-        subject_id=request.subject_id,
+        subject_id=subject_id,
         horizon_steps=len(predictions),
         predictions=predictions,
         last_known_glucose=request.glucose_mg_dl[-1],
