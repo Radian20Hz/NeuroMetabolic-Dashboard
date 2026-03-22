@@ -133,7 +133,6 @@ neurometabolic-dashboard/
 - Subject-agnostic inference (currently requires OhioT1DM subject ID)
 - Proactive hypoglycemia alert system (20-min lead time)
 - XAI — TFT attention map visualization
-- JLPT N5 milestone (December 2026)
 - Bilingual documentation (EN/JP)
 
 ---
