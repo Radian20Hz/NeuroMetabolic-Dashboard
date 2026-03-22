@@ -28,7 +28,7 @@ class PredictRequest(BaseModel):
     carbs_last_1h: Optional[list[float]] = Field(None)
     subject_id: str | None = Field(
         None,
-        description="Patient identifier. Valid: 559, 563, 570, 575, 588, 591. If None, auto-matched from glucose profile.",
+        description="Subject ID (559-591). If None, auto-matched from glucose profile.",
     )
 
     @field_validator("glucose_mg_dl")
@@ -38,7 +38,6 @@ class PredictRequest(BaseModel):
             if not (20.0 <= val <= 600.0):
                 raise ValueError(f"Glucose value {val} mg/dL out of range (20–600).")
         return v
-
 
 
 class PredictionPoint(BaseModel):
