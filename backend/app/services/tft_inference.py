@@ -245,6 +245,7 @@ def predict_from_history(
         upper = median
 
     return {
+        "last_known_glucose": round(float(glucose_values[-1]), 1),
         "predictions_mg_dl": [round(v, 1) for v in median],
         "lower_mg_dl": [round(v, 1) for v in lower],
         "upper_mg_dl": [round(v, 1) for v in upper],

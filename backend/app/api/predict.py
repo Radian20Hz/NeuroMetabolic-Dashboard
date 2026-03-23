@@ -47,6 +47,13 @@ class PredictionPoint(BaseModel):
     upper_mg_dl: float
 
 
+class AlertPayload(BaseModel):
+    level: str
+    message: str
+    triggered_at_min: int | None = None
+    min_predicted_glucose: float | None = None
+
+
 class PredictResponse(BaseModel):
     status: str = "success"
     subject_id: str
@@ -54,6 +61,7 @@ class PredictResponse(BaseModel):
     predictions: list[PredictionPoint]
     last_known_glucose: float
     model_version: str = "TFT-Phase3-epoch47"
+    alert: AlertPayload | None = None
 
 
 @router.post("", response_model=PredictResponse)
@@ -65,6 +73,7 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
     try:
         # Lazy import: avoids loading TFT model at startup (heavy, ~2GB)
         from app.services.tft_inference import predict_from_history
+        from app.services.hypo_alert import evaluate_hypo_alert
         from app.services.subject_matcher import match_subject_from_readings
         subject_id = request.subject_id
         if subject_id is None:
@@ -75,6 +84,16 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
             basal_values=request.basal_rate,
             carbs_values=request.carbs_last_1h,
             subject_id=subject_id,
+        )
+        preds_for_alert = [
+            {"minutes_ahead": result["horizon_minutes"][i],
+             "lower_mg_dl": result["lower_mg_dl"][i],
+             "glucose_mg_dl": result["predictions_mg_dl"][i]}
+            for i in range(len(result["horizon_minutes"]))
+        ]
+        alert = evaluate_hypo_alert(
+            last_known_glucose=result["last_known_glucose"],
+            predictions=preds_for_alert,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=f"Model not available: {e}")
@@ -93,6 +112,7 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
 
     return PredictResponse(
         subject_id=subject_id,
+        alert=AlertPayload(**alert.to_dict()),
         horizon_steps=len(predictions),
         predictions=predictions,
         last_known_glucose=request.glucose_mg_dl[-1],
