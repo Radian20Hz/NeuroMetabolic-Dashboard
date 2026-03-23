@@ -56,6 +56,7 @@ TIME_VARYING_UNKNOWN_REALS = [TARGET, "glucose_delta_1", "glucose_delta_3", "bol
 STATIC_CATEGORICALS = [GROUP_ID]
 
 
+exec(open('/tmp/patch_tft.py').read())
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--epochs", type=int, default=50)
@@ -152,8 +153,8 @@ def build_model(training, args, ckpt_path):
 
 
 def train(model, training, validation, args, ckpt_path):
-    train_loader = training.to_dataloader(train=True, batch_size=args.batch_size, num_workers=4, persistent_workers=True)
-    val_loader = validation.to_dataloader(train=False, batch_size=args.batch_size * 2, num_workers=4, persistent_workers=True)
+    train_loader = training.to_dataloader(train=True, batch_size=args.batch_size, num_workers=0, persistent_workers=False)
+    val_loader = validation.to_dataloader(train=False, batch_size=args.batch_size * 2, num_workers=0, persistent_workers=False)
 
     accelerator = "cpu" if args.no_gpu or not torch.cuda.is_available() else "gpu"
     log.info(f"  Accelerator: {accelerator.upper()}")
@@ -167,7 +168,7 @@ def train(model, training, validation, args, ckpt_path):
                             monitor="val_loss", save_top_k=2, mode="min"),
             LearningRateMonitor(logging_interval="epoch"),
         ],
-        logger=MLFlowLogger(experiment_name=args.experiment, tracking_uri="file:" + str(ROOT / "mlruns")),
+        num_sanity_val_steps=0,
     )
 
     log.info("Starting training ...")

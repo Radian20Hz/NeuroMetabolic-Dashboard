@@ -22,12 +22,13 @@ SUBJECT_PROFILES: dict[str, tuple[float, float, float]] = {
     "575": (141.9, 60.4, 69.2),
     "588": (164.9, 50.5, 63.7),
     "591": (155.9, 58.1, 64.2),
+    "wiktor": (136.2, 47.2, 82.6),
 }
 
 # Normalization ranges for feature scaling
-_AVG_RANGE = (141.9, 187.6)
-_STD_RANGE = (49.7, 70.5)
-_TIR_RANGE = (43.0, 74.2)
+_AVG_RANGE = (136.2, 187.6)
+_STD_RANGE = (47.2, 70.5)
+_TIR_RANGE = (43.0, 82.6)
 
 
 def _normalize(value: float, low: float, high: float) -> float:

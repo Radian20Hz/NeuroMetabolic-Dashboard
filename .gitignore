@@ -38,3 +38,5 @@ lightning_logs/
 backend/lightning_logs/
 frontend/.env.production
 backend/.env
+ml/data/processed/*.parquet
+ml/data/*.csv
