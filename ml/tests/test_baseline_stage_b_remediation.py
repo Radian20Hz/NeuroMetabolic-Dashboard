@@ -74,6 +74,8 @@ class Remediation(unittest.TestCase):
         child=self.child(name,**kwargs)
         self.assertEqual(child["observed_exit_code"],0,child.get("traceback"))
         self.assertLessEqual(child["synthetic_optimizer_steps"],8)
+        if kwargs.get("mode")=="resume-last":
+            self.assertTrue(child["callback_restore"]["pass"],child["callback_restore"])
         return child
 
     def state(self,name):return torch.load(self.root/name/"state.pt",weights_only=False,map_location="cpu")

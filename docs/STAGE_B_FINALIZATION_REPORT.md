@@ -1,5 +1,190 @@
 # Stage B finalization — CPU strict / CUDA seeded
 
+## Aktualizacja 2026-09-13 — callback restore: PASS
+
+**Stage B final verdict: PASS w zakresie certyfikowanej ścieżki Baseline v1.0.**
+CPU strict epoch-boundary replay zachowany; CUDA seeded FP32 epoch-boundary resume
+przechodzi zatwierdzony kontrakt. SWA OFF. Brak gwarancji bitwise CUDA, mid-epoch,
+partial-accumulation, cross-device/cross-stack, AMP, DDP lub pełnego treningu.
+Stage C nie rozpoczęto. Poniżej zachowano w całości wcześniejszy wynik FAIL;
+ten rozdział dokumentuje osobno jego zatwierdzoną naprawę i nowe dowody.
+
+### Root cause — ustalenia przed naprawą
+
+HEAD na wejściu: `dbea59b06c5a8f6c5eec83dc1050de2f7390cb75`, branch
+`research/baseline-audit`, working tree clean. Przeczytano AGENTS.md, raport
+remediation, final review, ten raport, aktualne testy oraz lokalną implementację
+Lightning2.6.1. Reproducer uruchomiony przed zmianą ponownie dał **FAIL**:
+`current_score` po load było None; wynik zachowano w `before.log`.
+
+Lokalny `ModelCheckpoint.state_dict()` zapisuje dziewięć pól: `monitor`,
+`best_model_score`, `best_model_path`, `current_score`, `dirpath`, `best_k_models`,
+`kth_best_model_path`, `kth_value`, `last_model_path`. Jego `load_state_dict()`
+odtwarza historię best/top-k/last przy zgodnym dirpath oraz best_model_path,
+lecz nie odczytuje current_score. Monitor i dirpath pozostają konfiguracją
+utworzonego callbacku. `current_score` jest ponownie ustawiane dopiero przez
+`_update_best_and_save()` z nowego monitora przy kolejnej walidacji.
+Źródło: `.venv/lib/python3.14/site-packages/lightning/pytorch/callbacks/model_checkpoint.py`,
+`state_dict`/`load_state_dict` około540–577, `_update_best_and_save` około950–975.
+
+Kod biblioteki dowodzi tego pominięcia, ale **nie wyjaśnia intencji autorów**
+ani nie udostępnia flagi zapewniającej pełny round-trip current_score. Nie
+przedstawiamy tego pola jako natywnej gwarancji Lightning2.6.1. Minimalny natywny
+kontrakt operacyjny pozwalałby na current_score=None aż do nowej walidacji;
+nie spełniałby jednak jawnego wymagania Stage B pełnego odtworzenia zapisanego
+stanu. Zachowano wymaganie użytkownika, rozszerzając tylko publiczny hook odczytu
+istniejącego pola; nie osłabiono testu ani nie stworzono wartości zastępczej.
+
+Wykluczono inne przyczyny:
+
+- Orkiestracja tworzy ten sam typ BoundaryCheckpoint: monitor=val_loss, mode=min,
+  save_top_k=-1, save_last=false, save_on_train_epoch_end=false, ten sam katalog
+  runu. Klucz stanu pozostaje identyczny. Nie ma wymiany callbacku po restore.
+- Kolejność: utworzenie callbacków → publiczne Trainer.fit(ckpt_path=...)
+  → checkpoint connector `_restore_modules_and_callbacks` → `restore_callbacks`
+  → `_call_callbacks_load_state_dict`. Ten dispatcher wyszukuje stan po
+  callback.state_key, kopiuje go i wywołuje load_state_dict na instancji znajdującej
+  się w trainer.callbacks. Następnie Lightning odtwarza optimizer/scheduler/loops;
+  pomiar wykonano w on_train_start po przywróceniu RNG, przed pierwszym forward.
+- Źródła lokalne: `trainer/trainer.py` około1000–1075,
+  `trainer/connectors/checkpoint_connector.py:restore_callbacks/restore_training_state`,
+  `trainer/call.py:_call_callbacks_load_state_dict` około298–311.
+- Registry weryfikuje artefakt i przekazuje ścieżkę do natywnego fit. Nie pomija
+  callback restore, nie usuwa pola z payloadu i nie zastępuje go manifestem.
+- Instrumentacja rzeczywistego CPU i CUDA resume potwierdziła **jedno natywne
+  wywołanie loadera oraz identyczność obiektu** z callbackiem odczytanym w
+  on_train_start. Porównano jego faktyczne state_dict z natywnym payloadem
+  checkpointu, nie z pomocniczo odtworzonymi wartościami.
+
+### Fix
+
+Jedyna zmiana produkcyjna: `BoundaryCheckpoint.load_state_dict` w
+`ml/scripts/baseline_training.py`. Po sprawdzeniu zgodności dirpath/monitor,
+obecności i finite current_score wywołuje **super().load_state_dict(state_dict)**,
+a następnie przypisuje **dokładnie state_dict["current_score"]** z tego samego
+natywnego stanu przekazanego przez Lightning. Nie nadpisuje pozostałych pól,
+nie zmienia state_key, konfiguracji, kolejności callbacków ani zapisu.
+
+Nie dodano własnej kopii callback state do rejestru lub innego formatu.
+Nie odczytuje się nazwy pliku, mtime ani val_loss manifestu i niczego nie
+przelicza. To uzupełnienie deserializacji istniejącego pola przez publiczne API,
+nie obejście pętli ani ręczne odtwarzanie wyniku naukowego. Site-packages bez zmian.
+Brak pola lub inny monitor/katalog daje jawną odmowę zamiast częściowego restore.
+
+W instrumentacji naprawiono również konieczny do oceny resume false negative
+HF-F01: obie strony porównania model state_dict są kopiowane tym samym helperem
+cpu(). Nie ignoruje się żadnego klucza/tensora; kontrola dodatnia przechodzi,
+perturbacja wartości nadal nie przechodzi. Tolerancje pozostają niezmienione.
+Oryginalne artefakty i wcześniejsza porównywarka w Git zachowują historyczny FAIL.
+
+### Callback restore test
+
+**PASS.** Zachowano nazwę i pierwotną asercję reproduktora, dodając sprawdzenie
+wszystkich dziewięciu pól i dowód wywołania natywnego loadera. Osobno odmowa
+niezgodnego/missing state. Unit test nie zastępuje integracji:
+
+| Rzeczywisty stan przed pierwszym resumed forward | CPU strict | CUDA seeded |
+|---|---|---|
+| best_model_score, best_model_path, current_score | PASS | PASS |
+| last_model_path, kth_best_model_path, kth_value, best_k_models | PASS | PASS |
+| monitor, dirpath, komplet kluczy stanu | PASS | PASS |
+| EarlyStopping: wait_count, best_score, patience, stopped_epoch, stopping_reason/message | PASS | PASS |
+| GradientNormLogger: counter, clip_val, warmup_steps | PASS | PASS |
+| BoundaryRNG: Python, NumPy, Torch, generatory; CUDA RNG na GPU | PASS | PASS |
+| Natywny dispatcher i ta sama instancja callbacku | PASS | PASS |
+
+save_last=false oznacza, że natywne last_model_path jest pustym ciągiem —
+sprawdzono jego zgodność. Rola LAST pozostaje jawna w registry i nie jest
+utożsamiana z natywnym save_last. save_top_k=-1 używa best_k_models/kth fields;
+ich pełna zgodność została sprawdzona, bez pomijania pustych lub zerowych wartości.
+
+### Validation / wyniki
+
+| Wykonanie | Wynik | Aktualizacje | Czas |
+|---|---|---:|---:|
+| Reproducer przed naprawą | 1 FAIL, zachowany | 0 | 0.001 s |
+| Ten sam targeted reproducer po naprawie | 1 PASS | 0 | 0.001 s |
+| Wszystkie focused finalization tests, rozszerzone | 6 PASS / 0 FAIL | 0 | 0.090 s |
+| Aktualny certyfikowany Stage B remediation suite | 32 PASS / 0 FAIL | 237:77 TFT+160 scalar | 160.012 s manifest |
+| Stage A regression | 31 PASS / 0 FAIL | 0 | 6.683 s |
+| CUDA P/R, osobne procesy | 4+4 PASS | 8 TFT | P14.136 s, R15.137 s |
+
+**Końcowy Stage B: 38 PASS / 0 FAIL / 0 ERROR / 0 SKIP / 0 XFAIL**
+(32 remediation +6 focused; targeted1 wykonano dodatkowo, nie doliczono go
+ponownie do liczby unikalnych metod). Stage A31 PASS. Historyczny pre-remediation
+`test_baseline_stage_b.py` pozostaje archiwum reproduktorów legacy, w tym SWA ON;
+nie uruchamiano eksperymentalnego SWA ani nie przepisywano jego czerwonych wyników.
+
+CPU suite: `ml/models/stage_b_remediation/20260913T180459Z/`.
+Strict 8 vs4+4 z dropout/shuffle, bez nich i z accumulation2 pozostaje bitwise
+zgodne; max abs weights0, optimizer/scheduler/RNG/order i callbacki PASS.
+W każdym wznowieniu nowy test sprawdza też bezpośrednią granicę restore.
+
+CUDA artefakty: `ml/models/stage_b_callback_restore/20260913_callback_01/cuda/`.
+Nowa prerejestracja zatwierdzonego ograniczonego wykonania ma SHA-256
+`8a9ace2bbfb88dc371e0bfe9d022e001df3f8b14bff4d647070bffff561eb9be`.
+Budżet: wyłącznie P4 + R4, każdy proces limit90 s; żadnego nowego C1/C2/C3.
+`comparisons.json`: wszystkie restore checks PASS, native_dispatch=true,
+same_restored_instance=true, następna epoka/global_step poprawne, RNG bez
+zużycia między restore i pierwszym forward. Wszystkie dodatkowe pola sprawdzono
+na rzeczywistym callbacku należącym do Trainer.
+
+P+R porównano offline z **każdą** zachowaną referencją C1–C3 z
+`20260913_finalization_01`. Dla każdej pary max abs batch/validation loss,
+pre/post gradient norm, LR oraz każdego parametru wynosi **0**; exceedances=0,
+RMS=0, relativeL2=0, normalized error=0 (LR exact). Dane, inicjalizacja,
+kolejność i środowisko są zgodne. Tolerancji nie zmieniono. Jedyny warning
+niedeterminizmu nadal dotyczy zaakceptowanego upsample_linear1d_backward_out_cuda.
+
+Ważność wcześniejszych 3×8 potwierdzono przed nowym GPU runem: AST orkiestracji
+różni się wyłącznie dodaną metodą load_state_dict; hashe modelu, objective,
+finite gates, numerical profile, registry, fixture generatora i configu pozostają
+zgodne z dawną prerejestracją. Świeże runy nie wywołują loadera callbacku.
+W porównaniu offline dopuszczono wyłącznie jawnie zreviewowaną różnicę code hash;
+**nie poluzowano zgodności produkcyjnego resume** i nie migrowano starego
+checkpointu. P i R używają tego samego nowego kodu i pełnego zgodnego kontraktu.
+
+Łącznie w tym zadaniu245 optimizer updates (85 TFT+160 scalar), bez dodatkowego
+treningu do uzyskania korzystnych wyników. Zachowane historyczne CUDA finite
+probes3/3 PASS nadal dotyczą niezmienionych finite gates. Nie powtarzano całej
+macierzy GPU ani 3×8. Syntax/import i git diff --check PASS.
+
+Polecenia: istniejący `remediate_stage_b`, unittest dla
+`test_baseline_stage_a.py` oraz `ml.tests.test_stage_b_finalization`; targeted
+`Finalization.test_checkpoint_current_score_restored_at_boundary` przed/po.
+Nowy runner ograniczonej regresji:
+
+```bash
+.venv/bin/python -m ml.scripts.diagnostics.check_callback_resume --prepare --root ml/models/stage_b_callback_restore/20260913_callback_01/cuda --reference ml/models/stage_b_finalization/20260913_finalization_01
+.venv/bin/python -m ml.scripts.diagnostics.check_callback_resume --root ml/models/stage_b_callback_restore/20260913_callback_01/cuda
+```
+
+GPU wykonano poza sandboxem po zatwierdzeniu; jedynie ustawienia procesu
+zatwierdzonego profilu, bez instalacji/zmian środowiska. Komendy, exit codes,
+stany, hashe, tożsamość callbacku i porównania w lokalnym ignorowanym katalogu;
+zbiorcza provenance w `20260913_callback_01/manifest.json`.
+
+### Scientific impact / remaining limitations / Git
+
+Nie zmieniono pytania naukowego, architektury, lossu, danych, splitów, optymalizacji,
+ordering, progów lub profilu numerycznego. Naprawiono odczyt istniejącego stanu.
+Nowy code hash blokuje niejawne wznawianie starszych checkpointów; nie ma migracji.
+Zgodność bitowa zaobserwowana na GPU nie jest gwarancją bitwise CUDA. Obowiązują
+pozostałe ograniczenia krótkich testów opisane poniżej. B13-F01 SWA ON pozostaje
+DEFERRED poza baseline, nie blocker. Clinical weighting, kalibracja, coverage,
+quantile crossing, rzeczywista ewaluacja i persistence pozostają do Stage C.
+Nie uruchomiono pełnego treningu, Optuny, Stage C ani test-set performance.
+
+Pliki: produkcyjny `ml/scripts/baseline_training.py`; instrumentacja
+`ml/scripts/diagnostics/{callback_restore,check_callback_resume,finalize_stage_b,remediate_stage_b}.py`;
+testy `ml/tests/{test_baseline_stage_b_remediation,test_stage_b_finalization}.py`;
+ten raport. Nowe pliki to callback_restore.py i check_callback_resume.py.
+HEAD pozostaje `dbea59b06c5a8f6c5eec83dc1050de2f7390cb75`, branch
+research/baseline-audit, dirty od tych zmian; nic staged/committed/pushed.
+
+## Historyczny wynik finalizacji przed naprawą callbacku
+
+
 Data: 2026-09-13. **Stage B final verdict: FAIL.**
 
 Trzy świeże CUDA runs oraz trajektoria 4+4 spełniają wszystkie prerejestrowane tolerancje. GPU finite safety: PASS. Dotychczasowa regresja CPU: Stage A 31 PASS, Stage B 32 PASS. Pozostała niespełniona dokładna bramka: `BoundaryCheckpoint` nie przywraca `current_score` na granicy resume. To nie jest problem zmienności CUDA ani SWA, ale nie pozwala zadeklarować pełnego checkpoint/callback restore zgodnie z zatwierdzonym kontraktem.

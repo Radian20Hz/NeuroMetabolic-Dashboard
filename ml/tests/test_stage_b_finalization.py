@@ -44,11 +44,45 @@ class Finalization(unittest.TestCase):
             registry=SimpleNamespace(root=Path(directory))
             before=BoundaryCheckpoint(registry,"same-run",{})
             before.current_score=torch.tensor(1.)
+            before.best_model_score=torch.tensor(.5)
+            before.best_model_path=str(Path(directory)/"same-run/best.ckpt")
+            before.best_k_models={before.best_model_path:torch.tensor(.5)}
+            before.kth_best_model_path=before.best_model_path
+            before.kth_value=torch.tensor(.5)
             saved=before.state_dict()
             after=BoundaryCheckpoint(registry,"same-run",{})
-            after.load_state_dict(saved)
+            original=pl.callbacks.ModelCheckpoint.load_state_dict
+            with patch.object(pl.callbacks.ModelCheckpoint,"load_state_dict",autospec=True,side_effect=original) as native:
+                after.load_state_dict(saved)
+                native.assert_called_once_with(after,saved)
             self.assertIsNotNone(after.current_score,"Serialized current_score was not restored")
             torch.testing.assert_close(after.current_score,saved["current_score"],rtol=0,atol=0)
+            from ml.scripts.diagnostics.callback_restore import same
+            for field,value in saved.items():
+                self.assertTrue(same(after.state_dict()[field],value),field)
+
+    def test_callback_restore_rejects_incompatible_or_missing_state(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from ml.scripts.baseline_training import BoundaryCheckpoint
+        with tempfile.TemporaryDirectory() as directory:
+            callback=BoundaryCheckpoint(SimpleNamespace(root=Path(directory)),"same-run",{})
+            saved=callback.state_dict()
+            for field in ("dirpath","monitor","current_score"):
+                bad=copy.deepcopy(saved)
+                if field=="current_score":del bad[field]
+                else:bad[field]="incompatible"
+                with self.assertRaises(ValueError):callback.load_state_dict(bad)
+
+    def test_boundary_tensor_container_canonicalization(self):
+        from collections import OrderedDict
+        from ml.scripts.diagnostics.finalize_stage_b import cpu,equal
+        original=OrderedDict(weight=torch.tensor([1.,2.]))
+        captured=cpu(original)
+        self.assertTrue(equal(captured,cpu(original)))
+        changed=OrderedDict(weight=torch.tensor([1.,3.]))
+        self.assertFalse(equal(captured,cpu(changed)))
 
     def test_symmetric_tolerances_positive_and_negative_control(self):
         tol=TOLERANCES["parameters"]

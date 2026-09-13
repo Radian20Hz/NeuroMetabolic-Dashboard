@@ -22,6 +22,7 @@ from ml.scripts.diagnostics import audit_stage_b as old
 from ml.scripts.diagnostics.remediate_stage_b import settings, small_fixture
 from ml.scripts.checkpoint_registry import Registry, contract, sha256, digest, atomic_json
 from ml.scripts.finite_training import gradient_norm
+from ml.scripts.diagnostics.callback_restore import observe_restore, snapshot as callback_snapshot
 
 ROOT=Path(__file__).resolve().parents[3]
 TOLERANCES={"loss": {"atol":1e-5,"rtol":1e-4},
@@ -38,6 +39,7 @@ SOURCES=["ml/scripts/diagnostics/finalize_stage_b.py","ml/scripts/numerical_prof
          "ml/scripts/baseline_training.py","ml/scripts/checkpoint_registry.py",
          "ml/scripts/train_tft_population_v2.py","ml/scripts/finite_training.py",
          "ml/scripts/diagnostics/remediate_stage_b.py","ml/scripts/diagnostics/audit_stage_b.py",
+         "ml/scripts/diagnostics/callback_restore.py",
          "configs/baseline_v1.json","docs/STAGE_B_FINAL_REVIEW.md"]
 
 
@@ -139,13 +141,15 @@ def worker(root,name):
                         driver=subprocess.check_output(["nvidia-smi","--query-gpu=driver_version","--format=csv,noheader"],text=True).strip())
                     if parent_payload is not None:
                         saved_rng=next(v for k,v in parent_payload["callbacks"].items() if "BoundaryRNG" in k)
-                        checks=dict(model=equal(raw["start"]["model"],parent_payload["state_dict"]),
+                        checks=dict(model=equal(raw["start"]["model"],cpu(parent_payload["state_dict"])),
                             optimizer=equal(raw["start"]["optimizer"],parent_payload["optimizer_states"][0]),
                             scheduler=equal(raw["start"]["scheduler"],parent_payload["lr_schedulers"][0]),
                             rng=equal(raw["start"]["rng"],{k:saved_rng[k] for k in ("python","numpy","torch","cuda")}),
                             callbacks=equal(raw["start"]["callbacks"],parent_payload["callbacks"]),
                             global_step=t.global_step==parent_payload["global_step"],
                             epoch=t.current_epoch==parent_payload["epoch"])
+                        report["callback_restore"]=callback_snapshot(t,parent_payload,restore_calls)
+                        checks["native_callback_restore"]=report["callback_restore"]["pass"]
                         report["restore_checks"]=checks
                         # Evidence is captured before any forward; failed checks remain a gate.
                 def on_train_batch_start(self,t,m,b,i):
@@ -177,7 +181,7 @@ def worker(root,name):
                 result=original(op,*a,**kw)
                 torch.cuda.synchronize();report["actual_updates"]+=1;row["finite"]=True
                 return result
-            with patch.object(torch.optim.AdamW,"step",observed):
+            with observe_restore() as restore_calls, patch.object(torch.optim.AdamW,"step",observed):
                 trainer=p.train(model,training,validation,args,checkpoint,extra_callbacks=[Trace()])
             torch.cuda.synchronize()
             raw["final"]=state(trainer,model)

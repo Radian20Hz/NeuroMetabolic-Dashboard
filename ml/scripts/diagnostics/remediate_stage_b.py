@@ -19,6 +19,7 @@ import lightning.pytorch as pl
 from ml.scripts import train_tft_population_v2 as p
 from ml.scripts.diagnostics import audit_stage_b as old
 from ml.scripts.checkpoint_registry import Registry,contract,sha256,atomic_json
+from ml.scripts.diagnostics.callback_restore import observe_restore, snapshot as callback_snapshot
 
 
 def settings(metadata, directory, seed=42, stochastic=True, accumulation=1, device="cpu"):
@@ -46,6 +47,9 @@ def worker(out,registry,parent=None,seed=42,stochastic=True,stop=False,accumulat
         source_sha256={q.name:sha256(q) for q in [Path(p.__file__),Path(__file__)]})
     trace=[];trainer=None
     class Trace(pl.Callback):
+        def on_train_start(self,t,m):
+            if parent_payload is not None:
+                report["callback_restore"]=callback_snapshot(t,parent_payload,restore_calls)
         def on_train_batch_start(self,t,m,b,i):
             x,y=b
             if injection=="input":x["encoder_cont"][0,0,0]=float("nan")
@@ -78,8 +82,8 @@ def worker(out,registry,parent=None,seed=42,stochastic=True,stop=False,accumulat
             args=settings(meta,registry,seed,stochastic,accumulation,device)
             args.stop_after_epoch=1 if stop else None;args.mode=mode;args.run_id=parent
             reg=Registry(registry);expected=contract(training,args,p.QUANTILES)
-            checkpoint=None
-            if mode=="resume-last":checkpoint=reg.verified(parent,"last",expected)[0]
+            checkpoint=None;parent_payload=None
+            if mode=="resume-last":checkpoint,parent_payload,_=reg.verified(parent,"last",expected)
             if mode=="weights-only":args.parent_run_id=parent
             model=p.build_model(training,args,checkpoint)
             report["initial_weights"]=old.tensor_digest(model.state_dict())
@@ -89,7 +93,7 @@ def worker(out,registry,parent=None,seed=42,stochastic=True,stop=False,accumulat
                         return torch.full_like(gradient,float("nan"))
                     return gradient
                 next(model.parameters()).register_hook(bad_gradient)
-            with patch.object(torch.optim.AdamW,"step",observed_step):
+            with observe_restore() as restore_calls, patch.object(torch.optim.AdamW,"step",observed_step):
                 trainer=p.train(model,training,validation,args,checkpoint,extra_callbacks=[Trace()])
             own=trainer.nmd_registry.manifest(trainer.nmd_run_id)
             report.update(exit_code=0,owned_run_id=trainer.nmd_run_id,contract=expected,

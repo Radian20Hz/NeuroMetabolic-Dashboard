@@ -105,6 +105,22 @@ class BoundaryCheckpoint(ModelCheckpoint):
         self.registry=registry;self.run_id=run_id;self.expected=expected
         self.stop_after_epoch=stop_after_epoch;self.publication=None
 
+    def load_state_dict(self, state_dict):
+        """Complete Lightning 2.6.1's native callback-state round trip.
+
+        The superclass serializes current_score but does not load it. Preserve
+        native restore for all other fields and use only that serialized value;
+        no duplicate state, monitor recomputation or checkpoint-name inference.
+        Certified continuation requires the same callback/run configuration.
+        """
+        if state_dict.get("dirpath") != self.dirpath or state_dict.get("monitor") != self.monitor:
+            raise ValueError("BoundaryCheckpoint restore requires the same dirpath and monitor")
+        if "current_score" not in state_dict:
+            raise ValueError("BoundaryCheckpoint state is missing current_score")
+        require_finite(state_dict["current_score"], "checkpoint callback current_score")
+        super().load_state_dict(state_dict)
+        self.current_score = state_dict["current_score"]
+
     def _save_checkpoint(self,trainer,filepath):
         budget=self.expected["budget"]
         next_epoch=trainer.current_epoch+1
