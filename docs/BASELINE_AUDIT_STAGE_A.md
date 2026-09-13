@@ -1,5 +1,9 @@
 # Baseline v1.0 — audyt etapu A
 
+Aktualizacja: naprawy zatwierdzonego protokołu A01–A07, testy i wynik nowej
+regeneracji opisuje [raport remediation](BASELINE_AUDIT_STAGE_A_REMEDIATION.md).
+Poniższy audyt pozostaje historycznym zapisem stanu przed naprawami.
+
 Data: 2026-09-13. Status: **etap A nie daje zgody na uznanie baseline'u za wolny od leakage**.
 Potwierdzono poprawne elementy izolacji splitów i indeksowania, ale także siedem
 problemów opisanych poniżej. Nie zmieniono logiki produkcyjnej, modelu ani backendu.
