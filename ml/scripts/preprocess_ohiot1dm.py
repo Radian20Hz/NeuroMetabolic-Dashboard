@@ -1,91 +1,7 @@
-"""
-ml/scripts/preprocess_ohiot1dm.py
-===================================
-OhioT1DM preprocessing pipeline — Phase 4 v17 (zero-trust audit fixes).
+"""NMD Baseline v1.0 Stage A remediation.
 
-Fixes applied on top of v16
-──────────────────────────────────────────
-  [FIX-CRIT-1]  ic_ratio_deviation was computed via rolling(24*12).median()
-            on the full unsplit patient series and written as a real value to
-            the parquet.  It was absent from _SENTINEL_ZERO_COLS so the guard
-            never fired.  Now sentineled to NaN (matching dynamic_isf_estimate)
-            and added to a new _SENTINEL_NAN_COLS set with its own guard in
-            main().  The training script's _compute_long_window_features()
-            already overwrites it post-split; the NaN sentinel ensures any path
-            that skips that recomputation fails loudly rather than silently.
-
-  [FIX-CRIT-1]  basal_bolus_ratio used rolling(24*12, min_periods=12).sum()
-            on the full unsplit patient series.  The 288 rows nearest the 85/15
-            split boundary incorporated future val-side bolus events — same
-            class as bolus_count_3h (FIX-ROLL-BOUNDARY).  Now sentineled to
-            0.0 and added to _SENTINEL_ZERO_COLS; recomputed post-split in
-            _compute_long_window_features().
-
-  [FIX-CRIT-1]  lbgi_30m, hbgi_30m, bgri used rolling(6).mean() on the full
-            unsplit patient series.  The 6 rows nearest the split boundary
-            incorporated future glucose.  Now sentineled to 0.0 and added to
-            _SENTINEL_ZERO_COLS; recomputed post-split in
-            _compute_long_window_features().
-
-  [FIX-HIGH-2]  steps_since_last_bolus had broken index arithmetic.
-            add_meal_bolus_timing() stored df.index label values and recovered
-            positions via np.searchsorted(df.index, x).  After any dropna +
-            reset_index sequence, pre-reset labels diverge from new 0-based
-            positions producing silently wrong values.  Rewritten to work
-            entirely in positional integer space (np.arange).
-
-Fixes applied on top of v15
-──────────────────────────────────────────
-  [FIX-NADIR-ASYM]  glucose_nadir_proximity and glucose_asymmetry_index both
-            use rolling(WIN_TIR=24).min/sum() on the full train-XML series.
-            After the 85/15 split in the training script the first 24 rows of
-            the val split have their rolling window computed over training rows —
-            cross-boundary contamination.  Both are now sentineled to 0.0 here
-            and recomputed post-split in _compute_long_window_features().
-
-  [FIX-TDD-SENTINEL]  tdd_rolling_7d and bolus_fraction_of_tdd use a
-            rolling(WIN_TDD=2016).sum/mean() on the full train-XML series.
-            The first 2016 rows of the val split incorporate training rows.
-            Both are now sentineled to 0.0 here.  The training script already
-            recomputes them post-split in _compute_long_window_features() with
-            warm-start blending; the sentinel ensures the parquet never carries
-            a contaminated value that could silently bypass that recomputation.
-
-Fixes applied on top of v14
-──────────────────────────────────────────
-  [FIX-INTERP-CAUSAL]  Replaced pd.Series.interpolate(method="linear") with
-            ffill(limit=6) for CGM gap filling.  Linear interpolation fills
-            interior gaps by drawing a line between the LEFT and RIGHT flanking
-            observed values — the right value is future data.  For a 30-min gap
-            (6 steps), the value at t+1 is influenced by the real CGM reading at
-            t+7.  ffill only propagates the last known value forward; it is
-            strictly causal.
-
-  [FIX-SENTINEL-GUARD]  Sentinel guard loop in main() now raises RuntimeError
-            when a sentinel column is absent from the parquet (previously only
-            emitted log.warning + continue).  A missing sentinel column is always
-            a pipeline error; silent pass would allow regressions to go undetected.
-
-  [FIX-BASAL-DEV]  basal_rate_deviation sentineled to 0.0.  Its
-            rolling(WIN_BASELINE=12).mean() baseline was computed on the full
-            unsplit patient series, contaminating the 12 rows nearest the split
-            boundary.  Recomputed post-split in _compute_long_window_features().
-
-  [FIX-ROLL-BOUNDARY]  Five additional rolling features sentineled to 0.0:
-            bolus_count_3h (36-step window, future bolus events),
-            glucose_sample_entropy_60m (12-step, future glucose),
-            glucose_tir_2h (24-step, future glucose),
-            glucose_hyper_ratio_2h (24-step, future glucose),
-            glucose_hypo_ratio_2h (24-step, future glucose),
-            glucose_dfa_alpha_2h (24-step, future glucose).
-            All recomputed post-split in _compute_long_window_features().
-
-All previous fixes from v14 (FIX-C1, FIX-C2, FIX-H1, FIX-H2, FIX-ISSUE-11,
-FIX-ISSUE-2a/2b, FIX-ISSUE-10, and all prior v9–v13 fixes) are retained
-without modification.
-
-Usage:
-    python ml/scripts/preprocess_ohiot1dm.py [--data-dir PATH] [--out-dir PATH]
+See docs/BASELINE_AUDIT_STAGE_A_REMEDIATION.md for the approved protocol.
+Historical audit findings are preserved in docs/BASELINE_AUDIT_STAGE_A.md.
 """
 from __future__ import annotations
 
@@ -100,6 +16,11 @@ import numpy as np
 import pandas as pd
 from scipy.signal import fftconvolve
 from scipy.spatial.distance import pdist
+
+if __package__ in (None, ""):
+    from temporal_protocol import regular_timeline, TARGET_OBSERVED
+else:
+    from .temporal_protocol import regular_timeline, TARGET_OBSERVED
 
 logging.basicConfig(
     level=logging.INFO,
@@ -145,10 +66,9 @@ _TS_FMT = "%d-%m-%Y %H:%M:%S"
 
 # Sentinel columns: written as 0.0 in parquet, recomputed post-split.
 _SENTINEL_ZERO_COLS = frozenset({
-    "correction_bolus_prior",
+    "bolus_event_prior",
     "weekend_meal_prior",
     "hr_recovery_slope",
-    "hr_resting_estimate",
     "hr_reserve_pct",
     "is_aerobic_exercise",
     "is_stress_response",
@@ -237,6 +157,7 @@ _SENTINEL_ZERO_COLS = frozenset({
 # NaN propagates loudly if the recomputation is ever skipped — unlike 0.0 which
 # would silently produce a wrong-but-finite feature value.
 _SENTINEL_NAN_COLS: frozenset[str] = frozenset({
+    "hr_resting_estimate",
     # [FIX-CRIT-1] ic_ratio_deviation: add_ic_ratio_deviation() calls
     # rolling(24*12).median() on the full unsplit patient series.  Writing a
     # real value here means the parquet carries a contaminated value for the
@@ -419,23 +340,19 @@ def _parse_basis_data(root: ET.Element) -> pd.DataFrame:
     temp_df = _to_df(temp_records, ["timestamp", "skin_temperature"])
     step_df = _to_df(step_records, ["timestamp", "steps"])
 
-    if hr_df.empty:
-        log.warning("  Basis HR data absent — returning empty basis DataFrame.")
-        return pd.DataFrame(columns=["timestamp", "heart_rate", "gsr",
-                                     "skin_temperature", "steps"])
-
-    # [FIX-ISSUE-2a] direction="backward" — causal: use the most recent
-    # prior reading from each sensor, never a future one.
-    merged = hr_df
-    for other in [gsr_df, temp_df, step_df]:
-        if not other.empty:
+    frames = [hr_df, gsr_df, temp_df, step_df]
+    stamps = sorted({ts for frame in frames for ts in frame["timestamp"]})
+    if not stamps:
+        return pd.DataFrame(columns=["timestamp", "heart_rate", "gsr", "skin_temperature", "steps"])
+    merged = pd.DataFrame({"timestamp": stamps})
+    for frame in frames:
+        column = frame.columns[1]
+        if frame.empty:
+            merged[column] = np.nan
+        else:
             merged = pd.merge_asof(
-                merged.sort_values("timestamp"),
-                other.sort_values("timestamp"),
-                on="timestamp",
-                direction="backward",
-                tolerance=pd.Timedelta("5min"),
-            )
+                merged, frame.sort_values("timestamp").drop_duplicates("timestamp", keep="last"),
+                on="timestamp", direction="backward", tolerance=pd.Timedelta("5min"))
     return merged
 
 
@@ -460,7 +377,9 @@ def resample_to_cgm_grid(
     if cgm_df.empty:
         return pd.DataFrame()
 
-    t_start = cgm_df["timestamp"].min().floor(freq)
+    # The bin before the first source CGM cannot contain an observed target.
+    # Keeping it can overlap the preceding XML's last grid bin at a split seam.
+    t_start = cgm_df["timestamp"].min().ceil(freq)
     t_end   = cgm_df["timestamp"].max().ceil(freq)
     grid    = pd.date_range(t_start, t_end, freq=freq)
     df      = pd.DataFrame({"timestamp": grid})
@@ -490,12 +409,13 @@ def resample_to_cgm_grid(
         bolus_binned = (
             bolus_df.groupby("timestamp")["bolus_dose"]
             .sum().reset_index()
-            .rename(columns={"bolus_dose": "bolus_event"})
+
         )
         df = df.merge(bolus_binned, on="timestamp", how="left")
     else:
-        df["bolus_event"] = 0.0
-    df["bolus_event"] = df["bolus_event"].fillna(0.0)
+        df["bolus_dose"] = 0.0
+    df["bolus_dose"] = df["bolus_dose"].fillna(0.0)
+    df["bolus_event"] = (df["bolus_dose"] > 0).astype(float)
 
     # Basal — [FIX-2] drop duplicates before set_index
     if not basal_df.empty:
@@ -621,28 +541,17 @@ def add_calendar_windows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _rolling_linear_deviation(g: pd.Series, win: int) -> pd.Series:
-    t        = np.arange(win, dtype=float)
-    t_bar    = t.mean()
-    w        = t - t_bar
-    w_sq_sum = float((w ** 2).sum())
+    # A01: a complete trailing window; gaps must not contaminate the FFT of
+    # the whole series. Incomplete windows have the existing neutral deviation.
+    t = np.arange(win, dtype=float)
+    centered = t - t.mean()
+    denominator = np.dot(centered, centered)
 
-    g_vals = g.values.astype(float)
-    n      = len(g_vals)
+    def deviation(values):
+        slope = np.dot(values, centered) / denominator
+        return values[-1] - (values.mean() + slope * (win - 1 - t.mean()))
 
-    w_flipped         = w[::-1]
-    weighted_sum_full = fftconvolve(g_vals, w_flipped, mode="full")
-    weighted_sum_vals = weighted_sum_full[win - 1: n + win - 1]
-    weighted_sum      = pd.Series(weighted_sum_vals, index=g.index)
-
-    g_roll_mean = g.rolling(win, min_periods=win // 2).mean()
-    slope       = weighted_sum / w_sq_sum
-    intercept   = g_roll_mean - slope * t_bar
-    trend_end   = intercept + slope * (win - 1)
-
-    deviation = g - trend_end
-    deviation = deviation.where(~g_roll_mean.isna(), other=0.0)
-    deviation.iloc[: win - 1] = 0.0
-    return deviation.fillna(0.0)
+    return g.rolling(win, min_periods=win).apply(deviation, raw=True).fillna(0.)
 
 
 def add_glucose_dynamics(df: pd.DataFrame) -> pd.DataFrame:
@@ -721,6 +630,7 @@ def _cob_kernel_unit(t_min: np.ndarray) -> np.ndarray:
 
 
 def compute_iob_cob(df: pd.DataFrame) -> pd.DataFrame:
+    df = regular_timeline(df)
     dt      = 5.0
     max_lag = int(IOB_DIA_MIN / dt) + 1
 
@@ -728,7 +638,7 @@ def compute_iob_cob(df: pd.DataFrame) -> pd.DataFrame:
     iob_k = _iob_kernel(t_arr)
     cob_k = _cob_kernel_unit(t_arr)
 
-    bolus = df["bolus_event"].values.astype(float)
+    bolus = df["bolus_dose"].values.astype(float)
     meal  = df["meal_event"].values.astype(float)
 
     iob_conv = fftconvolve(bolus, iob_k, mode="full")[: len(bolus)]
@@ -765,7 +675,8 @@ def add_pk_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_rolling_insulin_carb(df: pd.DataFrame) -> pd.DataFrame:
-    df["bolus_last_1h"] = df["bolus_event"].rolling(12, min_periods=1).sum()
+    df = regular_timeline(df)
+    df["bolus_last_1h"] = df["bolus_dose"].rolling(12, min_periods=1).sum()
     df["carbs_last_1h"] = df["meal_event"].rolling(12, min_periods=1).sum()
     return df
 
@@ -830,7 +741,7 @@ def add_exercise_features(df: pd.DataFrame) -> pd.DataFrame:
     df["exercise_epoc_effect"]  = fftconvolve(ex_vals, epoc_k,  mode="full")[: len(ex_vals)]
 
     # [ZT-CRIT-NEW-1] Sentinels — recomputed post-split with causal resting HR.
-    df["hr_resting_estimate"] = 0.0
+    df["hr_resting_estimate"] = np.nan
     df["hr_reserve_pct"]      = 0.0
     df["is_aerobic_exercise"] = 0.0
     df["is_stress_response"]  = 0.0
@@ -938,6 +849,7 @@ def add_cgm_gap_flag(
             f"{len(observed)} != {len(df)}"
         )
     df["cgm_gap_flag"] = (~observed).astype(float)
+    df[TARGET_OBSERVED] = observed
     return df
 
 
@@ -1160,6 +1072,7 @@ def add_iob_glucose_coinfall(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_meal_bolus_timing(df: pd.DataFrame) -> pd.DataFrame:
+    df = regular_timeline(df)
     # [FIX-HIGH-2] The previous implementation stored df.index label values
     # into bolus_idx, then called np.searchsorted(df.index, x) to recover
     # positional offsets.  After reset_index(drop=True) the RangeIndex labels
@@ -1232,64 +1145,11 @@ def process_patient(
         log.warning(f"  Patient {patient_id}: insufficient data after resampling.")
         return None
 
-    n_before = len(df)
-
-    # [FIX-C1] Post-split causal glucose interpolation.
-    # Each XML file corresponds to exactly one source_split (train XML → "train",
-    # test XML → "test"), so interpolation here is guaranteed to operate on a
-    # single split's data and can never cross the train/test boundary.
-    # Previously, interpolation ran in resample_to_cgm_grid() on the full unsplit
-    # series, allowing gaps straddling the 85/15 boundary to be filled using
-    # future (val-side) glucose values.
-    #
-    # [AUDIT-HIGH-NEW-1] Capture which rows are REAL (non-interpolated) CGM
-    # observations BEFORE interpolation and any further row drops or index
-    # changes. Store as a plain NumPy boolean array so it is immune to index
-    # resets.
-    # [ZT-HIGH-NEW-2] Previously stored as a pd.Series and re-aligned with
-    # isin(df.index) after reset_index(drop=True) — that comparison was
-    # against the NEW sequential index (0…N-1), not the original positions,
-    # silently including interpolated rows in the "observed" set.
-    raw_cgm_observed_arr: np.ndarray = df["glucose_mg_dl"].notna().to_numpy(dtype=bool)
-
-    # [FIX-C1] [FIX-INTERP-CAUSAL] Fill CGM gaps of up to 6 steps (30 min)
-    # on the isolated single-split series using forward-fill only.
-    #
-    # IMPORTANT — why ffill, not linear interpolation:
-    # pd.Series.interpolate(method="linear") fills interior gaps by drawing a
-    # straight line between the last known value on the LEFT and the next known
-    # value on the RIGHT of the gap.  The right endpoint is a FUTURE observation,
-    # so the filled value at every step inside the gap incorporates future glucose
-    # data.  For a 30-min gap (6 steps), the value interpolated at t+1 is
-    # influenced by the real CGM reading at t+7.  This is classical two-sided
-    # leakage regardless of limit_direction.
-    #
-    # ffill propagates the last observed value forward; it never looks ahead.
-    # Clinically, carrying the last CGM reading is also the correct assumption
-    # for a closed-loop system that has lost signal.
+    # A03/A04: retain the COMPLETE timeline, including independent events
+    # during CGM outages. Missing targets remain NaN in parquet. Only observed
+    # CGM may later be a decoder target; ffill is encoder-only (max 6 steps).
+    raw_cgm_observed_arr = df["glucose_mg_dl"].notna().to_numpy(dtype=bool)
     df["glucose_mg_dl"] = df["glucose_mg_dl"].ffill(limit=6)
-
-    if source_split == "train":
-        keep_mask = df["glucose_mg_dl"].notna().to_numpy(dtype=bool)
-        df = df[keep_mask].reset_index(drop=True)
-        # [ZT-HIGH-NEW-2] Filter the boolean array in parallel with the rows.
-        raw_cgm_observed_arr = raw_cgm_observed_arr[keep_mask]
-        n_dropped = n_before - len(df)
-        if n_dropped > 0:
-            log.info(f"    [{source_split}] Dropped {n_dropped} rows with missing glucose.")
-        if len(df) < 100:
-            log.warning(f"  Patient {patient_id}: too few rows after dropna — skipping.")
-            return None
-    else:
-        n_nan_remaining = df["glucose_mg_dl"].isna().sum()
-        if n_nan_remaining > 0:
-            keep_mask = df["glucose_mg_dl"].notna().to_numpy(dtype=bool)
-            # [ZT-HIGH-NEW-2] Filter array in parallel before resetting index.
-            raw_cgm_observed_arr = raw_cgm_observed_arr[keep_mask]
-            df = df[keep_mask].reset_index(drop=True)
-        if len(df) < 100:
-            log.warning(f"  Patient {patient_id} [{source_split}]: too few rows — skipping.")
-            return None
 
     # Feature engineering
     df = add_time_features(df)
@@ -1422,24 +1282,24 @@ def main() -> None:
 
     # ── Sentinel guards ───────────────────────────────────────────────────
     # [FIX-H1] Replaced the old vacuously-true assertion
-    # ('correction_bolus_prior' not in combined.columns — a column that was
+    # ('bolus_event_prior' not in combined.columns — a column that was
     # never written, so the test always passed) with a unified loop over
     # _SENTINEL_ZERO_COLS that verifies every sentinel column IS present and
     # contains only 0.0.  This catches any future regression where a real
     # pre-split computation is accidentally re-introduced.
     #
-    # correction_bolus_prior is the one exception: it is intentionally never
+    # bolus_event_prior is the one exception: it is intentionally never
     # written to the parquet (computed entirely post-split in the training
     # script), so its absence is expected and not an error.
     for _sentinel_col in sorted(_SENTINEL_ZERO_COLS):
-        if _sentinel_col == "correction_bolus_prior":
+        if _sentinel_col == "bolus_event_prior":
             if _sentinel_col in combined.columns:
                 raise RuntimeError(
-                    "[LEAK-1] correction_bolus_prior found in parquet. "
+                    "[LEAK-1] bolus_event_prior found in parquet. "
                     "This column must NOT be written by the preprocessor; "
                     "it is computed post-split in the training script only."
                 )
-            log.info("  [SENTINEL-GUARD] correction_bolus_prior correctly absent ✓")
+            log.info("  [SENTINEL-GUARD] bolus_event_prior correctly absent ✓")
             continue
         if _sentinel_col not in combined.columns:
             raise RuntimeError(

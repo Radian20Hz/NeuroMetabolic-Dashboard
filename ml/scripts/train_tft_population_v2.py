@@ -1,55 +1,7 @@
-"""
-ml/scripts/train_tft_population_v2.py
-=======================================
-Phase 4 v19 — Zero-Trust Audit Fixes (round 9)
+"""NMD Baseline v1.0 Stage A remediation.
 
-Fixes applied on top of v18
-──────────────────────────────────────────
-  [FIX-CRIT-1]  ic_ratio_deviation was written as a real (contaminated) rolling
-            value to the parquet and was absent from _SENTINEL_ZERO_COLS, so the
-            sentinel guard never fired.  Now sentineled to NaN in the preprocessor
-            (matching dynamic_isf_estimate) and added to PRE_SPLIT_FILLNA_SKIP,
-            POST_SPLIT_COMPUTED, POST_SPLIT_FINAL_FILLNA_SKIP, and the test-data
-            drop set.  The existing _compute_long_window_features() recomputation
-            is unchanged.
-
-  [FIX-CRIT-1]  basal_bolus_ratio used rolling(24*12, min_periods=12).sum()
-            on the full unsplit patient series (same class as bolus_count_3h,
-            FIX-ROLL-BOUNDARY).  Now sentineled to 0.0 in the preprocessor
-            and recomputed post-split in _compute_long_window_features().
-            Added to PRE_SPLIT_FILLNA_SKIP, POST_SPLIT_COMPUTED, and all
-            related skip/cleanup sets.
-
-  [FIX-CRIT-1]  lbgi_30m, hbgi_30m, bgri used rolling(6).mean() on the full
-            unsplit series.  Now sentineled to 0.0 in the preprocessor and
-            recomputed post-split in _compute_long_window_features().
-
-  [FIX-HIGH-2]  steps_since_last_bolus had broken index arithmetic in the
-            preprocessor (label index vs positional index mismatch after
-            dropna + reset_index).  Fixed in the preprocessor using positional
-            np.arange arithmetic; no training-script change needed.
-
-  [FIX-CRIT-2]  GroupNormalizer fitted-on-train guard was logically vacuous:
-            hasattr(_norm, 'center_') is True even on an unfitted normalizer
-            because __init__ sets center_ = None.  Replaced with
-            getattr(_norm, 'center_', None) is not None, which correctly
-            verifies fit() has been called.
-
-  [FIX-MED-1]  Replaced the CR-8 variance heuristic (train_std vs val_std × 3)
-            with a sentinel-recomputation check.  The old heuristic could not
-            detect the failure mode it was designed to catch: a sentinel column
-            still holding 0.0 after a failed recomputation produces std=0 in
-            both splits, trivially passing the 3× threshold.  New check: after
-            _compute_long_window_features() runs, 0.0-sentinel columns must
-            have at least some non-zero values in the train split, and NaN-
-            sentinel columns must have no remaining NaNs.
-
-All previous fixes from v18 (FIX-NADIR-ASYM, FIX-TDD-SENTINEL,
-FIX-NORM-GROUPNORM, and all prior v17 and earlier fixes) retained without
-modification.
-
-Usage:
-    python ml/scripts/train_tft_population_v2.py [--epochs 60] [--batch-size 64]
+See docs/BASELINE_AUDIT_STAGE_A_REMEDIATION.md for the approved protocol.
+Historical audit findings are preserved in docs/BASELINE_AUDIT_STAGE_A.md.
 """
 from __future__ import annotations
 
@@ -80,6 +32,13 @@ from pytorch_forecasting.data.encoders import EncoderNormalizer, GroupNormalizer
 from pytorch_forecasting.data import NaNLabelEncoder
 
 import numpy._core.multiarray
+
+if __package__ in (None, ""):
+    from temporal_protocol import regular_timeline, TARGET_OBSERVED, validate_observation_indicator
+    from observed_windows import validate_dense_frame, filter_observed_windows, assert_observed_evaluation
+else:
+    from .temporal_protocol import regular_timeline, TARGET_OBSERVED, validate_observation_indicator
+    from .observed_windows import validate_dense_frame, filter_observed_windows, assert_observed_evaluation
 
 torch.serialization.add_safe_globals([
     EncoderNormalizer,
@@ -135,7 +94,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 ROOT      = Path(__file__).resolve().parents[2]
 DATA_DIR  = ROOT / "ml" / "data" / "processed"
-MODEL_DIR = ROOT / "ml" / "models"
+MODEL_DIR = ROOT / "ml" / "models" / "baseline_v1_stage_a"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -205,7 +164,7 @@ TIME_VARYING_UNKNOWN_REALS: list[str] = [
     "dynamic_isf_estimate",
     "postprandial_phase",
     "steps_since_last_bolus",
-    "correction_bolus_prior",
+    "bolus_event_prior",
     "hr_variability_15m",
     "hr_above_resting",
     "hr_trend_30m",
@@ -239,7 +198,7 @@ TIME_VARYING_UNKNOWN_REALS: list[str] = [
 # Columns skipped by the pre-split fillna(0.0) loop.
 PRE_SPLIT_FILLNA_SKIP: frozenset[str] = frozenset({
     "dynamic_isf_estimate",
-    "correction_bolus_prior",
+    "bolus_event_prior",
     "weekend_meal_prior",
     "ic_ratio_deviation",
     "tdd_rolling_7d",
@@ -294,27 +253,19 @@ PRE_SPLIT_FILLNA_SKIP: frozenset[str] = frozenset({
 # ─────────────────────────────────────────────────────────────────────────────
 # CAUSAL CORRECTION BOLUS PRIOR  [AUDIT-CRIT-2]
 # ─────────────────────────────────────────────────────────────────────────────
-def _compute_correction_bolus_prior(df: pd.DataFrame) -> pd.Series:
-    df = df.sort_values("timestamp").reset_index(drop=True)
-    bolus_occurred = (
-        (df["bolus_event"].rolling(6, min_periods=1).max().fillna(0.0)) > 0
-    ).astype(float)
-    return (
-        bolus_occurred
-        .rolling(24 * 12, min_periods=12)
-        .mean()
-        .fillna(0.1)
-    )
+def _compute_bolus_event_prior(df: pd.DataFrame) -> pd.Series:
+    df = regular_timeline(df)
+    return (df["bolus_event"] > 0).astype(float).rolling(288, min_periods=1).mean()
 
 
-def _compute_correction_bolus_prior_with_history(
+def _compute_bolus_event_prior_with_history(
     current: pd.DataFrame,
     history: "pd.DataFrame | None" = None,
 ) -> pd.Series:
     """Compute the causal prior with exact preceding history when contiguous."""
     cur = current.sort_values("timestamp").reset_index(drop=True)
     if history is None or history.empty or cur.empty:
-        return _compute_correction_bolus_prior(cur)
+        return _compute_bolus_event_prior(cur)
 
     hist = history.sort_values("timestamp").reset_index(drop=True)
     gap = pd.Timestamp(cur["timestamp"].iloc[0]) - pd.Timestamp(hist["timestamp"].iloc[-1])
@@ -325,14 +276,16 @@ def _compute_correction_bolus_prior_with_history(
     if gap > pd.Timedelta("10min"):
         log.warning(
             f"  [AUDIT-CBP] Boundary gap {gap} is >10 min; "
-            "using current-split-only correction_bolus_prior."
+            "using current-split-only bolus_event_prior."
         )
-        return _compute_correction_bolus_prior(cur)
+        return _compute_bolus_event_prior(cur)
 
-    # rolling(6) followed by rolling(288): retain enough true prior rows for both.
-    hist_tail = hist.tail(24 * 12 + 6)
+    hist_tail = hist.tail(288)
+    hist_tail = hist_tail.copy()
+    if "source_split" in cur:
+        hist_tail["source_split"] = cur["source_split"].iloc[0]
     combined = pd.concat([hist_tail, cur], ignore_index=True, sort=False)
-    values = _compute_correction_bolus_prior(combined)
+    values = _compute_bolus_event_prior(combined)
     return values.tail(len(cur)).reset_index(drop=True)
 
 
@@ -359,41 +312,16 @@ def _compute_hr_resting_causal(
     hr: pd.Series,
     warmstart_value: "float | None" = None,
 ) -> pd.Series:
+    """Trailing HR statistic; before first observation, missing or past state.
+
+    A02: first observation fallback is available only at/after its timestamp.
+    A valid supplied historical state may initialize an otherwise missing prefix.
     """
-    Causal resting HR via rolling 10th-percentile (window = 96 steps = 8 h,
-    min_periods = 24 steps = 2 h).
-
-    Warm-up fill — strictly causal:
-      1. ffill(limit=96): carry the most recent observed HR reading forward
-         into the warm-up window.  This is causal because ffill only ever
-         looks backward.
-      2. fillna(warmstart_value or first_valid): any remaining NaNs before the
-         very first HR reading are filled with the train-split tail estimate
-         when available (via FIX-ISSUE-15), or with the first observed HR value.
-
-    [FIX-ISSUE-8] Previous version used bfill(limit=24), which filled
-    warm-up NaNs BACKWARD from the rolling-quantile value at t+2h — i.e.
-    it stamped a statistic computed on future HR data onto t=0..t+2h.
-    bfill of any kind is non-causal and has been removed.
-
-    [FIX-ISSUE-15] `warmstart_value`: when provided (val split only), the
-    leading NaN warm-up window is filled with the train split's last resting-HR
-    estimate rather than the first observed HR of the val split.  This is causal
-    because it uses only data that precedes the val period.
-    """
-    resting = (
-        hr.rolling(96, min_periods=24)
-        .quantile(0.10)
-    )
-    # Step 1: causal forward-fill.
-    resting = resting.ffill(limit=96)
-    # Step 2: fill any remaining leading NaNs.
-    if warmstart_value is not None:
-        fill_val = float(warmstart_value)
-    else:
-        fill_val = float(hr.dropna().iloc[0]) if hr.notna().any() else 70.0
-    resting = resting.fillna(fill_val)
-    return resting
+    resting = hr.rolling(96, min_periods=24).quantile(0.10).ffill(limit=96)
+    available_hr = hr.ffill(limit=96)
+    if warmstart_value is not None and np.isfinite(warmstart_value):
+        available_hr = available_hr.fillna(float(warmstart_value))
+    return resting.fillna(available_hr)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -431,9 +359,9 @@ def _compute_exercise_features_causal(
     df = df.copy()
     df = df.sort_values("timestamp").reset_index(drop=True)
 
-    has_hr   = "heart_rate" in df.columns and df["heart_rate"].notna().any()
-    has_gsr  = "gsr"              in df.columns and df["gsr"].notna().any()
-    has_temp = "skin_temperature" in df.columns and df["skin_temperature"].notna().any()
+    has_hr   = "heart_rate" in df.columns
+    has_gsr  = "gsr" in df.columns
+    has_temp = "skin_temperature" in df.columns
     has_step = "steps_last_30m" in df.columns
 
     # [FIX-C2] Recompute gsr_stress_deviation and skin_temp_deviation on the
@@ -516,7 +444,7 @@ def _compute_exercise_features_causal(
         ).astype(float)
 
     else:
-        df["hr_resting_estimate"] = 0.0
+        df["hr_resting_estimate"] = np.nan
         df["hr_reserve_pct"]      = 0.0
         df["hr_above_resting"]    = 0.0
         df["is_aerobic_exercise"] = 0.0
@@ -572,9 +500,10 @@ def _compute_exercise_features_causal(
         gsr_zscore  = (gsr_col_stress / gsr_std.clip(lower=0.1)).clip(-10.0, 10.0).fillna(0.0)
         skin_dev    = df.get("skin_temp_deviation", pd.Series(0.0, index=df.index))
         temp_zscore = (skin_dev / temp_std.clip(lower=0.1)).clip(-10.0, 10.0).fillna(0.0)
+        available = df[["heart_rate", "gsr", "skin_temperature"]].notna().all(axis=1)
         df["autonomic_stress_index"] = (
             (hr_zscore + gsr_zscore - temp_zscore) / 3.0
-        ).fillna(0.0)
+        ).where(available, df["composite_stress_index"]).fillna(0.0)
     else:
         # Fall back to composite_stress_index (same as original preprocessor fallback)
         df["autonomic_stress_index"] = df["composite_stress_index"]
@@ -634,20 +563,13 @@ def _extract_train_warmstart(train_grp: pd.DataFrame) -> dict:
     ws: dict = {}
 
     WIN_TDD_LOCAL = 7 * 24 * 12
-    if "bolus_event" in train_grp.columns and "basal_rate" in train_grp.columns:
-        bolus_sum  = train_grp["bolus_event"].rolling(WIN_TDD_LOCAL, min_periods=1).sum()
+    if "bolus_dose" in train_grp.columns and "basal_rate" in train_grp.columns:
+        bolus_sum  = train_grp["bolus_dose"].rolling(WIN_TDD_LOCAL, min_periods=1).sum()
         basal_mean = train_grp["basal_rate"].rolling(WIN_TDD_LOCAL, min_periods=1).mean()
         # Mean total daily dose (U/day) over the trailing 7-day window:
         # (7-day bolus total + estimated 7-day basal total) / 7.
         tdd        = (bolus_sum + basal_mean * 24.0 * 7.0) / 7.0
         ws["tdd_last"] = float(tdd.iloc[-1]) if len(tdd) else 20.0
-
-    if "bolus_event" in train_grp.columns:
-        bolus_occurred = (
-            (train_grp["bolus_event"].rolling(6, min_periods=1).max().fillna(0.0)) > 0
-        ).astype(float)
-        cbp = bolus_occurred.rolling(24 * 12, min_periods=12).mean().fillna(0.1)
-        ws["cbp_last"] = float(cbp.iloc[-1]) if len(cbp) else 0.1
 
     if "carb_to_bolus_ratio_1h" in train_grp.columns:
         ratio_ma = (
@@ -681,9 +603,9 @@ def _compute_long_window_features(
     _extract_train_warmstart() so the val split begins its rolling windows
     from the correct prior state rather than cold-starting from scratch.
     Without this, the first ~24h of val features (tdd_rolling_7d,
-    correction_bolus_prior, ic_ratio_deviation) are systematically biased low.
+    bolus_event_prior, ic_ratio_deviation) are systematically biased low.
     """
-    df = df.copy()
+    df = regular_timeline(df)
     df = df.sort_values("timestamp").reset_index(drop=True)
     ws = warmstart or {}
 
@@ -701,6 +623,8 @@ def _compute_long_window_features(
         boundary_gap = cur_start - hist_end
         if pd.Timedelta(0) < boundary_gap <= pd.Timedelta("10min"):
             current_n = len(df)
+            if "source_split" in df:
+                hist["source_split"] = df["source_split"].iloc[0]
             combined = pd.concat([hist, df], ignore_index=True, sort=False)
             combined = combined.sort_values("timestamp").reset_index(drop=True)
             recomputed = _compute_long_window_features(combined, warmstart=None)
@@ -759,9 +683,9 @@ def _compute_long_window_features(
     # [FIX-ISSUE-15] Blend val's own growing rolling sum with the train-tail prior
     # using a linear ramp over the first WIN_TDD_LOCAL/2 steps.  This eliminates
     # the cold-start underestimation of TDD at the start of the val period.
-    if "bolus_event" in df.columns and "basal_rate" in df.columns:
+    if "bolus_dose" in df.columns and "basal_rate" in df.columns:
         WIN_TDD_LOCAL = 7 * 24 * 12
-        bolus_rolling = df["bolus_event"].rolling(WIN_TDD_LOCAL, min_periods=1).sum()
+        bolus_rolling = df["bolus_dose"].rolling(WIN_TDD_LOCAL, min_periods=1).sum()
         basal_daily   = (
             df["basal_rate"].rolling(WIN_TDD_LOCAL, min_periods=1).mean() * 24.0
         )
@@ -804,14 +728,10 @@ def _compute_long_window_features(
     # split, making glucose_lag_1 at val[0] = last train glucose (cross-boundary
     # leak).  Here the shift runs on each split in isolation.
     # Warm-up fill: use the first non-NaN glucose value in this split only.
-    _first_glucose = (
-        float(df["glucose_mg_dl"].dropna().iloc[0])
-        if df["glucose_mg_dl"].notna().any() else 100.0
-    )
-    for _lag in [1, 2, 3, 6, 12, 24]:
-        df[f"glucose_lag_{_lag}"] = (
-            df["glucose_mg_dl"].shift(_lag).fillna(_first_glucose)
-        )
+    for lag in [1, 2, 3, 6, 12, 24]:
+        lagged = df["glucose_mg_dl"].shift(lag)
+        df[f"glucose_lag_{lag}_available"] = lagged.notna().astype(float)
+        df[f"glucose_lag_{lag}"] = lagged.fillna(0.)
 
     # [FIX-BASAL-DEV] Recompute basal_rate_deviation post-split.
     # The rolling(WIN_BASELINE=12).mean() baseline is now computed on the
@@ -920,11 +840,11 @@ def _compute_long_window_features(
     # [FIX-CRIT-1] Recompute basal_bolus_ratio post-split.
     # rolling(24*12, min_periods=12).sum() on the full series contaminated the
     # 288 rows nearest the split boundary with future bolus events.
-    if "bolus_event" in df.columns and "basal_rate" in df.columns:
+    if "bolus_dose" in df.columns and "basal_rate" in df.columns:
         basal_24h = (
             df["basal_rate"].rolling(24 * 12, min_periods=12).mean() * 24.0
         )
-        bolus_24h = df["bolus_event"].rolling(24 * 12, min_periods=12).sum()
+        bolus_24h = df["bolus_dose"].rolling(24 * 12, min_periods=12).sum()
         df["basal_bolus_ratio"] = (
             basal_24h / (bolus_24h + 1e-6)
         ).clip(0.0, 10.0).fillna(1.0)
@@ -1074,6 +994,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Train Population TFT for glucose forecasting"
     )
+    p.add_argument("--data-dir", type=Path, default=DATA_DIR)
     p.add_argument("--epochs",               type=int,   default=60)
     p.add_argument("--batch-size",           type=int,   default=64)
     p.add_argument("--horizon",              type=int,   default=MAX_PREDICTION_LENGTH)
@@ -1096,7 +1017,7 @@ def parse_args() -> argparse.Namespace:
 # ─────────────────────────────────────────────────────────────────────────────
 # CHECKPOINT HELPER
 # ─────────────────────────────────────────────────────────────────────────────
-def find_best_checkpoint(prefix: str = "tft-pop-audited") -> Optional[str]:
+def find_best_checkpoint(prefix: str = "tft-stage-a-v1") -> Optional[str]:
     all_ckpts = [
         c for c in MODEL_DIR.glob(f"{prefix}-*.ckpt")
         if "last" not in c.name
@@ -1272,28 +1193,29 @@ def load_and_preprocess_data(
         )
 
     df = pd.read_parquet(parquet_path)
+    validate_observation_indicator(df)
     n_before = len(df)
     df = df[df["source_split"] == "train"].copy()
     log.info(f"  Filtered to source_split='train': {len(df):,} / {n_before:,} rows")
     df[SUBJECT_COL] = df[SUBJECT_COL].astype(str)
 
     # [LEAK-1] Guard
-    if "correction_bolus_prior" in df.columns:
+    if "bolus_event_prior" in df.columns:
         raise RuntimeError(
-            "[LEAK-1] 'correction_bolus_prior' found in training.parquet. "
+            "[LEAK-1] 'bolus_event_prior' found in training.parquet. "
             "Delete training.parquet and rerun preprocess_ohiot1dm.py."
         )
-    log.info("  [LEAK-1 guard] correction_bolus_prior absent from parquet ✓")
+    log.info("  [LEAK-1 guard] bolus_event_prior absent from parquet ✓")
 
     # Pre-split fillna — skip sentinel columns
     for col in TIME_VARYING_UNKNOWN_REALS:
-        if col in PRE_SPLIT_FILLNA_SKIP:
+        if col in PRE_SPLIT_FILLNA_SKIP or col == TARGET_COL:
             continue
         if col in df.columns and df[col].dtype in (float, "float32", "float64"):
             df[col] = df[col].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     POST_SPLIT_COMPUTED = {
-        "correction_bolus_prior",
+        "bolus_event_prior",
         "weekend_meal_prior",
         "ic_ratio_deviation",
         "dynamic_isf_estimate",
@@ -1346,7 +1268,7 @@ def load_and_preprocess_data(
         + TIME_VARYING_KNOWN_REALS
         + unknown_reals_check
         + STATIC_CATEGORICALS
-        + ["bolus_event"]
+        + ["bolus_event", "bolus_dose", TARGET_OBSERVED]
     )
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
@@ -1371,8 +1293,13 @@ def load_and_preprocess_data(
 
     for patient in patients:
         pdf      = df[df[SUBJECT_COL] == patient].copy()
-        n        = len(pdf)
-        split_at = int(n * 0.85)
+        n = len(pdf)
+        eligible = pdf.loc[pdf[TARGET_COL].notna(), "timestamp"]
+        cut = int(len(eligible) * 0.85)
+        if cut == 0 or cut == len(eligible):
+            raise ValueError("Insufficient eligible CGM for temporal split")
+        boundary = eligible.iloc[cut]
+        split_at = int((pdf.timestamp < boundary).sum())
 
         min_required = MAX_ENCODER_LENGTH + MAX_PREDICTION_LENGTH
         if split_at < min_required:
@@ -1390,25 +1317,11 @@ def load_and_preprocess_data(
     train_df = pd.concat(train_parts, ignore_index=True)
     val_df   = pd.concat(val_parts,   ignore_index=True)
 
-    # Post-split feature computation — each split in isolation
-    log.info("  Computing correction_bolus_prior post-split... [AUDIT-CRIT-2]")
-# [FIX-FINAL] Brutalne wyczyszczenie indeksów, żeby zabić błąd "duplicate labels"
-    train_df = train_df.reset_index(drop=True)
-    val_df = val_df.reset_index(drop=True)
-
-    log.info("  Computing correction_bolus_prior post-split... [AUDIT-CRIT-2]")
-
-    # Używamy transform - to jest najbezpieczniejsza i najszybsza metoda w Pandas
-    train_df["correction_bolus_prior"] = (
-        train_df.groupby(SUBJECT_COL)["bolus_event"]
-        .transform(lambda x: (x > 0).astype(float).rolling(24 * 12, min_periods=1).mean())
-        .fillna(0.0)
-    )
-    val_df["correction_bolus_prior"] = (
-        val_df.groupby(SUBJECT_COL)["bolus_event"]
-        .transform(lambda x: (x > 0).astype(float).rolling(24 * 12, min_periods=1).mean())
-        .fillna(0.0)
-    )
+    # A07: identical event-frequency helper for every split; no bolus type inference.
+    train_df = pd.concat([
+        grp.assign(bolus_event_prior=_compute_bolus_event_prior(grp).to_numpy())
+        for _, grp in train_df.groupby(SUBJECT_COL)
+    ], ignore_index=True)
     # Validation starts immediately after each patient's train segment, so use
     # the actual preceding bolus history rather than an approximate scalar blend.
     val_df_parts: list[pd.DataFrame] = []
@@ -1418,7 +1331,7 @@ def load_and_preprocess_data(
         if va_grp.empty:
             continue
         va_grp = va_grp.sort_values("timestamp").reset_index(drop=True)
-        va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior_with_history(
+        va_grp["bolus_event_prior"] = _compute_bolus_event_prior_with_history(
             va_grp, tr_grp if not tr_grp.empty else None
         ).to_numpy()
         val_df_parts.append(va_grp)
@@ -1488,7 +1401,7 @@ def load_and_preprocess_data(
         "ic_ratio_deviation",
     })
     for col in PRE_SPLIT_FILLNA_SKIP:
-        if col in POST_SPLIT_FINAL_FILLNA_SKIP:
+        if col in POST_SPLIT_FINAL_FILLNA_SKIP or col == "hr_resting_estimate":
             continue
         if col in train_df.columns:
             train_df[col] = train_df[col].replace([np.inf, -np.inf], np.nan).fillna(0.0)
@@ -1527,7 +1440,7 @@ def load_and_preprocess_data(
     ]
     for df_ in (train_df, val_df):
         for col in _new_sentinel_cols:
-            if col in df_.columns:
+            if col in df_.columns and col != "hr_resting_estimate":
                 mask = ~np.isfinite(df_[col])
                 df_.loc[mask, col] = 0.0
 
@@ -1612,18 +1525,19 @@ def load_test_data(
 ) -> pd.DataFrame:
     parquet_path = data_dir / "training.parquet"
     full_parquet = pd.read_parquet(parquet_path)
+    validate_observation_indicator(full_parquet)
 
     df = full_parquet[full_parquet["source_split"] == "test"].copy()
     log.info(f"  Test set: {len(df):,} rows, {df['subject_id'].nunique()} patients")
     df[SUBJECT_COL] = df[SUBJECT_COL].astype(str)
 
-    if "correction_bolus_prior" in df.columns:
+    if "bolus_event_prior" in df.columns:
         raise RuntimeError(
-            "[LEAK-1] 'correction_bolus_prior' found in test parquet."
+            "[LEAK-1] 'bolus_event_prior' found in test parquet."
         )
 
     POST_SPLIT_COMPUTED = {
-        "correction_bolus_prior", "weekend_meal_prior",
+        "bolus_event_prior", "weekend_meal_prior",
         "ic_ratio_deviation", "dynamic_isf_estimate",
         "tdd_rolling_7d", "bolus_fraction_of_tdd",
         "hr_recovery_slope",
@@ -1687,7 +1601,7 @@ def load_test_data(
         for patient_id, grp in df.groupby(SUBJECT_COL)
     ], ignore_index=True)
 
-    # correction_bolus_prior: use exact train-tail history only when the source
+    # bolus_event_prior: use exact train-tail history only when the source
     # XMLs are chronologically contiguous; the helper cold-starts across a gap.
     cbp_parts: list[pd.DataFrame] = []
     for pid in sorted(df[SUBJECT_COL].unique()):
@@ -1696,13 +1610,15 @@ def load_test_data(
             continue
         tr_grp = train_rows[train_rows[SUBJECT_COL] == str(pid)].copy()
         va_grp = va_grp.sort_values("timestamp").reset_index(drop=True)
-        va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior_with_history(
+        va_grp["bolus_event_prior"] = _compute_bolus_event_prior_with_history(
             va_grp, tr_grp if not tr_grp.empty else None
         ).to_numpy()
         cbp_parts.append(va_grp)
     df = pd.concat(cbp_parts, ignore_index=True) if cbp_parts else df
 
     for col in TIME_VARYING_UNKNOWN_REALS:
+        if col == TARGET_COL:
+            continue
         if col in df.columns and df[col].dtype in (float, "float32", "float64"):
             df[col] = df[col].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
@@ -1727,45 +1643,40 @@ def create_time_series_dataset(
     context_length:    int  = MAX_ENCODER_LENGTH,
     horizon:           int  = MAX_PREDICTION_LENGTH,
 ) -> TimeSeriesDataSet:
+    # A04/A05: PF 1.7 fills skipped time_idx values by repeating targets.
+    # Require dense input and disable this path. NaN placeholders are storage
+    # only; the supported index filter removes every sequence exposing one.
+    df = df.sort_values([GROUP_COL, "time_idx"]).reset_index(drop=True)
+    validate_dense_frame(df)
+    prepared = df.copy()
+    prepared[TARGET_COL] = prepared[TARGET_COL].fillna(1.0)
+    unknown = TIME_VARYING_UNKNOWN_REALS + [
+        f"glucose_lag_{lag}_available" for lag in [1, 2, 3, 6, 12, 24]]
+    for col in unknown:
+        if col != TARGET_COL:
+            prepared[col] = prepared[col].replace([np.inf, -np.inf], np.nan).fillna(0.)
     if reference_dataset is not None:
-        return TimeSeriesDataSet.from_dataset(
-            reference_dataset,
-            df,
-            predict=predict_mode,
-            stop_randomization=True,
-            min_prediction_length=horizon,
-            max_prediction_length=horizon,
-        )
-
-    return TimeSeriesDataSet(
-        df,
-        time_idx="time_idx",
-        target=TARGET_COL,
-        group_ids=[GROUP_COL],
-        min_encoder_length=context_length // 2,
-        max_encoder_length=context_length,
-        min_prediction_length=1,
-        max_prediction_length=horizon,
-        static_categoricals=STATIC_CATEGORICALS,
-        static_reals=STATIC_REALS,
-        time_varying_known_reals=TIME_VARYING_KNOWN_REALS,
-        time_varying_unknown_reals=TIME_VARYING_UNKNOWN_REALS,
-        # [FIX-NORM-GROUPNORM] GroupNormalizer replaces EncoderNormalizer.
-        # EncoderNormalizer fit per-sample on the encoder window: for val/test
-        # samples that window contains validation/test history, so its scaling
-        # statistics vary sample-by-sample. GroupNormalizer is instead fitted
-        # on the training TimeSeriesDataSet and its fitted state is carried into
-        # validation/test via from_dataset(), avoiding target-period refitting.
-        target_normalizer=GroupNormalizer(
-            groups=[GROUP_COL],
-            transformation="log",
-            center=True,
-        ),
-        add_relative_time_idx=True,
-        add_target_scales=True,
-        add_encoder_length=True,
-        allow_missing_timesteps=True,
-    )
+        dataset = TimeSeriesDataSet.from_dataset(
+            reference_dataset, prepared, predict=predict_mode,
+            stop_randomization=True, min_prediction_length=horizon,
+            max_prediction_length=horizon, allow_missing_timesteps=False)
+    else:
+        # Storage placeholders must never enter fitted target statistics.
+        observed = df[TARGET_OBSERVED].astype(bool)
+        normalizer = GroupNormalizer(groups=[GROUP_COL], transformation="log", center=True)
+        normalizer.fit(df.loc[observed, TARGET_COL], df.loc[observed])
+        dataset = TimeSeriesDataSet(
+            prepared, time_idx="time_idx", target=TARGET_COL, group_ids=[GROUP_COL],
+            min_encoder_length=context_length // 2, max_encoder_length=context_length,
+            min_prediction_length=1, max_prediction_length=horizon,
+            static_categoricals=STATIC_CATEGORICALS, static_reals=STATIC_REALS,
+            time_varying_known_reals=TIME_VARYING_KNOWN_REALS,
+            time_varying_unknown_reals=unknown, target_normalizer=normalizer,
+            add_relative_time_idx=True, add_target_scales=True,
+            add_encoder_length=True, allow_missing_timesteps=False)
+    dataset = filter_observed_windows(dataset, df)
+    log.info("Stage A window eligibility: %s", dataset.stage_a_window_stats)
+    return dataset
 
 
 def build_datasets(
@@ -1784,14 +1695,9 @@ def build_datasets(
     # per group.  With only a handful of patients that makes val_loss and Optuna
     # tuning depend on just a handful of sequences.  For validation we want all
     # eligible rolling windows and a fixed full forecast horizon.
-    validation = TimeSeriesDataSet.from_dataset(
-        training,
-        val_df,
-        predict=False,
-        stop_randomization=True,
-        min_prediction_length=args.horizon,
-        max_prediction_length=args.horizon,
-    )
+    validation = create_time_series_dataset(
+        val_df, reference_dataset=training, horizon=args.horizon)
+
 
     # [FIX-NORM-GROUPNORM] The target normalizer must be fitted ONLY on training
     # data and reused for validation.  GroupNormalizer stores its fitted group
@@ -2027,7 +1933,7 @@ def train(
     )
     checkpoint_callback = ModelCheckpoint(
         dirpath=MODEL_DIR,
-        filename="tft-pop-audited-{epoch:02d}-{val_loss:.4f}",
+        filename="tft-stage-a-v1-{epoch:02d}-{val_loss:.4f}",
         monitor="val_loss",
         save_top_k=3,
         mode="min",
@@ -2193,6 +2099,7 @@ def evaluate(
     [LEAK-E] Persistence baseline — miss → exclude, not substitute.
     [AUDIT-MED-NEW-1] ARIMA(1,1,0) baseline added alongside flat persistence.
     """
+    assert_observed_evaluation(validation, val_df)
     log.info("Evaluating on validation set...")
     log.info(
         "  [ZT-MED-4] NOTE: metrics are WITHIN-SUBJECT TEMPORAL validation. "
@@ -2759,7 +2666,7 @@ def main() -> None:
 
     ckpt_path = None if args.no_resume else find_best_checkpoint()
 
-    train_df, val_df    = load_and_preprocess_data()
+    train_df, val_df    = load_and_preprocess_data(args.data_dir)
     training_ds, val_ds = build_datasets(train_df, val_df, args)
     model               = build_model(training_ds, args, ckpt_path)
     trainer             = train(model, training_ds, val_ds, args, ckpt_path)
@@ -2787,7 +2694,7 @@ def main() -> None:
     )
 
     try:
-        test_df = load_test_data(train_max_time_idx=combined_max_time_idx)
+        test_df = load_test_data(data_dir=args.data_dir, train_max_time_idx=combined_max_time_idx)
         test_ds = create_time_series_dataset(
             test_df,
             reference_dataset=training_ds,

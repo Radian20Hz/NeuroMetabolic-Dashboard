@@ -1,8 +1,7 @@
 """Stage A: synthetic-only audit; no model fit, patient files or evaluation.
 
 Run from repo root: .venv/bin/python -m unittest discover -s ml/tests -v
-Known defects are expectedFailure tests of the desired invariant. An unexpected
-success requires review/removal of that marker, not silent acceptance.
+Regression tests assert the repaired Stage A protocol.
 """
 import logging
 import tempfile
@@ -97,7 +96,7 @@ class StageA(unittest.TestCase):
             pre._parse_glucose(root), pre._parse_bolus(root), pre._parse_basal(root),
             pre._parse_temp_basal(root), pre._parse_meals(root),
             pre._parse_exercise(root), pre._parse_basis_data(root))
-        for column, value in (("bolus_event", 2), ("meal_event", 20),
+        for column, value in (("bolus_dose", 2), ("bolus_event", 1), ("meal_event", 20),
                               ("exercise_duration_min", 15)):
             self.assertEqual(frame[column].iloc[0], 0)
             self.assertEqual(frame[column].iloc[1], value)
@@ -113,8 +112,19 @@ class StageA(unittest.TestCase):
         for i in range(30, 36):
             self.assertEqual(indexed.loc[times[i], "glucose_mg_dl"], 110 + 29)
             self.assertEqual(indexed.loc[times[i], "cgm_gap_flag"], 1)
-        self.assertFalse(times[36] in indexed.index)
+        self.assertTrue(pd.isna(indexed.loc[times[36], "glucose_mg_dl"]))
+        self.assertFalse(indexed.loc[times[36], "target_observed"])
         self.assertEqual(indexed.loc[times[40], "cgm_gap_flag"], 0)
+
+    def test_offgrid_xml_boundaries_cannot_add_overlapping_leading_bin(self):
+        path = self.root / "offgrid-train.xml"
+        times = write_xml(path, n=120, start="2024-01-01 00:01")
+        tr = pre.process_patient(path, "synthetic_A", source_split="train")
+        path = self.root / "offgrid-test.xml"
+        write_xml(path, n=120, start=times[-1] + pd.Timedelta("5min"))
+        te = pre.process_patient(path, "synthetic_A", source_split="test")
+        self.assertLess(tr.timestamp.max(), te.timestamp.min())
+        self.assertGreaterEqual(tr.timestamp.min(), times[0])
 
     def test_active_preprocessing_features_are_prefix_invariant(self):
         original = processed(self.root / "prefix.xml", n=180)
@@ -125,7 +135,7 @@ class StageA(unittest.TestCase):
 
     def test_future_meal_bolus_exercise_do_not_change_past_aggregates(self):
         n = 200
-        original = pd.DataFrame({"bolus_event": np.zeros(n), "meal_event": np.zeros(n),
+        original = pd.DataFrame({"bolus_dose": np.zeros(n), "bolus_event": np.zeros(n), "meal_event": np.zeros(n),
                                  "exercise_duration_min": np.zeros(n)})
         changed = original.copy()
         changed.loc[120:, :] = 5.
@@ -146,7 +156,6 @@ class StageA(unittest.TestCase):
         self.assertEqual(bad["duplicate_rows"], 1)
         self.assertEqual(bad["train_test_ordered"], 1)
 
-    @unittest.expectedFailure
     def test_A01_trend_feature_must_not_read_future(self):
         original = pd.Series(np.arange(80, dtype=float) + 100)
         changed = original.copy()
@@ -155,12 +164,39 @@ class StageA(unittest.TestCase):
                                    pre._rolling_linear_deviation(changed, 12).iloc[:40],
                                    atol=1e-8)
 
-    @unittest.expectedFailure
     def test_A02_resting_hr_before_first_observation_must_not_read_future(self):
         original = pd.Series([np.nan] * 30 + [70.] * 40)
         changed = pd.Series([np.nan] * 30 + [120.] * 40)
         np.testing.assert_allclose(pipeline._compute_hr_resting_causal(original).iloc[:30],
                                    pipeline._compute_hr_resting_causal(changed).iloc[:30])
+        self.assertTrue(pipeline._compute_hr_resting_causal(original).iloc[:30].isna().all())
+        np.testing.assert_allclose(pipeline._compute_hr_resting_causal(original, 80.).iloc[:30], 80.)
+        self.assertEqual(pipeline._compute_hr_resting_causal(original).iloc[30], 70.)
+        self.assertTrue(self.source.hr_resting_estimate.isna().all())
+
+    def test_sensor_suffix_does_not_change_any_postsplit_feature(self):
+        base = self.source.query("subject_id == 'synthetic_A' and source_split == 'train'").copy()
+        for sensor in ("heart_rate", "gsr", "skin_temperature"):
+            original = base.copy()
+            original[sensor] = np.nan
+            changed = original.copy()
+            changed.loc[changed.index[300:], sensor] = base[sensor].iloc[300:].values
+            left = pipeline._compute_long_window_features(original).iloc[:300]
+            right = pipeline._compute_long_window_features(changed).iloc[:300]
+            numeric = left.select_dtypes(include="number").columns
+            np.testing.assert_allclose(left[numeric], right[numeric], equal_nan=True)
+
+    def test_small_model_forward_smoke_without_training(self):
+        torch.manual_seed(42)
+        model = pipeline.ClinicalTFT.from_dataset(
+            self.training_ds, hidden_size=8, attention_head_size=1,
+            hidden_continuous_size=4, loss=pipeline.ClinicalQuantileLoss(quantiles=pipeline.QUANTILES))
+        model.eval()
+        x, _ = next(iter(self.validation_ds.to_dataloader(train=False, batch_size=2, num_workers=0)))
+        with torch.no_grad():
+            out = model(x).prediction
+        self.assertEqual(tuple(out.shape), (2, 12, len(pipeline.QUANTILES)))
+        self.assertTrue(torch.isfinite(out).all())
 
     def test_postsplit_features_are_prefix_invariant_with_observed_start(self):
         original = self.source.query("subject_id == 'synthetic_A' and source_split == 'train'").copy()
@@ -173,7 +209,6 @@ class StageA(unittest.TestCase):
         numeric = left.select_dtypes(include="number").columns
         np.testing.assert_allclose(left[numeric], right[numeric], equal_nan=True)
 
-    @unittest.expectedFailure
     def test_A06_future_sensor_availability_must_not_change_active_past_feature(self):
         original = self.source.query("subject_id == 'synthetic_A' and source_split == 'train'").copy()
         original["skin_temperature"] = np.nan
@@ -184,43 +219,25 @@ class StageA(unittest.TestCase):
         np.testing.assert_allclose(left.autonomic_stress_index.iloc[:300],
                                    right.autonomic_stress_index.iloc[:300])
 
-    @unittest.expectedFailure
     def test_A07_correction_prior_has_same_definition_in_train_and_validation(self):
         # Same contiguous history, compare actual loader train feature against
         # helper used by validation/test (not against a duplicated formula).
         tr = self.train[self.train.subject_id == "synthetic_A"]
-        expected = pipeline._compute_correction_bolus_prior_with_history(tr)
-        np.testing.assert_allclose(tr.correction_bolus_prior.values, expected.values)
+        expected = pipeline._compute_bolus_event_prior_with_history(tr)
+        np.testing.assert_allclose(tr.bolus_event_prior.values, expected.values)
 
-    def test_known_defects_have_numeric_reproducers(self):
-        # Characterization alongside expectedFailure invariants ensures that
-        # those markers do not conceal an unrelated exception in a fixture.
-        g = pd.Series(np.arange(80, dtype=float) + 100)
-        changed = g.copy()
-        changed.iloc[40:] += 100
-        a, b = [pre._rolling_linear_deviation(v, 12) for v in (g, changed)]
-        self.assertGreater(abs(a.iloc[35] - b.iloc[35]), 1)
-        self.assertNotIn("glucose_deviation_from_trend", pipeline.TIME_VARYING_UNKNOWN_REALS)
-        hr = pipeline._compute_hr_resting_causal(pd.Series([np.nan] * 30 + [123.] * 40))
-        self.assertEqual(hr.iloc[0], 123.)
-        frame = self.train[self.train.subject_id == "synthetic_A"].copy()
-        removed = set(frame.time_idx.iloc[100:124])
-        ds = pipeline.create_time_series_dataset(
-            frame[~frame.time_idx.isin(removed)], reference_dataset=self.training_ds)
-        count = 0
-        for i, row in ds.decoded_index.reset_index(drop=True).iterrows():
-            start, end = int(row.time_idx_first_prediction), int(row.time_idx_last)
-            missing = set(range(start, end + 1)) & removed
-            if missing:
-                _, (target, weight) = ds[i]
-                self.assertIsNone(weight)
-                for step in missing:
-                    self.assertTrue(torch.isfinite(target[step - start]))
-                    # PF fills missing integer timesteps from the preceding row.
-                    self.assertAlmostEqual(float(target[step - start]),
-                                           float(frame.loc[frame.time_idx == 99, "glucose_mg_dl"].iloc[0]))
-                count += 1
-        self.assertGreater(count, 0)
+    def test_trend_matches_independent_least_squares_reference(self):
+        g = pd.Series(120 + 10 * np.sin(np.arange(100) / 7))
+        g.iloc[30:34] = np.nan
+        for win in (6, 12, 24):
+            expected = np.zeros(len(g))
+            for end in range(win - 1, len(g)):
+                values = g.iloc[end - win + 1:end + 1].to_numpy()
+                if np.isfinite(values).all():
+                    matrix = np.column_stack([np.arange(win), np.ones(win)])
+                    slope, intercept = np.linalg.lstsq(matrix, values, rcond=None)[0]
+                    expected[end] = values[-1] - (slope * (win - 1) + intercept)
+            np.testing.assert_allclose(pre._rolling_linear_deviation(g, win), expected, atol=1e-10)
 
     def test_split_membership_chronology_and_test_isolation(self):
         for subject in ("synthetic_A", "synthetic_B"):
@@ -262,17 +279,15 @@ class StageA(unittest.TestCase):
             self.assertEqual(va.timestamp.min() - tr.timestamp.max(), pd.Timedelta("5min"))
             self.assertEqual(va.time_idx.min() - tr.time_idx.max(), pipeline.TRAIN_VAL_GAP + 1)
 
-    @unittest.expectedFailure
     def test_A03_one_hour_rolling_must_expire_events_across_long_gap(self):
         frame = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01", "2024-01-01 03:05"], format="mixed"),
-                              "bolus_event": [2., 0.], "meal_event": [20., 0.]})
+                              "bolus_dose": [2., 0.], "bolus_event": [1., 0.], "meal_event": [20., 0.]})
         out = pre.add_rolling_insulin_carb(frame)
         self.assertEqual(out.bolus_last_1h.iloc[-1], 0.)
 
-    @unittest.expectedFailure
     def test_A03_iob_must_expire_after_more_than_kernel_duration(self):
         frame = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-01", "2024-01-01 06:00"], format="mixed"),
-                              "bolus_event": [2., 0.], "meal_event": [0., 0.]})
+                              "bolus_dose": [2., 0.], "bolus_event": [1., 0.], "meal_event": [0., 0.]})
         self.assertAlmostEqual(pre.compute_iob_cob(frame).insulin_on_board.iloc[-1], 0.)
 
     def test_warmstart_rejects_future_or_overlapping_history(self):
@@ -281,7 +296,7 @@ class StageA(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 pipeline._compute_long_window_features(current, pipeline._extract_train_warmstart(history))
             with self.assertRaises(RuntimeError):
-                pipeline._compute_correction_bolus_prior_with_history(current, history)
+                pipeline._compute_bolus_event_prior_with_history(current, history)
 
     def test_contiguous_warmstart_matches_past_lags(self):
         for subject in self.train.subject_id.unique():
@@ -332,29 +347,97 @@ class StageA(unittest.TestCase):
             j = a.reals.index(name)
             torch.testing.assert_close(xa["x_cont"][encoder_length:, j], xb["x_cont"][encoder_length:, j])
 
-    @unittest.expectedFailure
     def test_A04_decoder_targets_must_not_be_synthesized_inside_missing_gap(self):
         frame = self.train[self.train.subject_id == "synthetic_A"].copy()
-        removed = set(frame.time_idx.iloc[100:124])  # two hours without rows
-        frame = frame[~frame.time_idx.isin(removed)]
+        removed = set(frame.time_idx.iloc[100:124])
+        mask = frame.time_idx.isin(removed)
+        frame.loc[mask, "glucose_mg_dl"] = np.nan
+        frame.loc[mask, "target_observed"] = False
+        frame.loc[mask, "cgm_gap_flag"] = 1.
         ds = pipeline.create_time_series_dataset(frame, reference_dataset=self.training_ds)
+        self.assertFalse(ds.allow_missing_timesteps)
+        self.assertGreater(ds.stage_a_window_stats["windows_invalid_decoder"], 0)
+        self.assertGreater(ds.stage_a_window_stats["windows_invalid_encoder"], 0)
         for row in ds.decoded_index.itertuples():
-            targets = set(range(int(row.time_idx_first_prediction), int(row.time_idx_last) + 1))
-            self.assertFalse(targets & removed, "Dataset contains unobserved decoder targets")
+            entire_window = set(range(int(row.time_idx_first), int(row.time_idx_last) + 1))
+            self.assertFalse(entire_window & removed)
+        with self.assertRaisesRegex(ValueError, "complete five-minute"):
+            pipeline.create_time_series_dataset(frame[~mask], reference_dataset=self.training_ds)
 
-    @unittest.expectedFailure
     def test_A05_imputed_cgm_targets_must_be_excluded_or_zero_weighted(self):
         frame = self.val[self.val.subject_id == "synthetic_A"].copy()
         idx = frame.index[40]
         frame.loc[idx, "glucose_mg_dl"] = frame.loc[idx - 1, "glucose_mg_dl"]
         frame.loc[idx, "cgm_gap_flag"] = 1.
+        frame.loc[idx, "target_observed"] = False
         ds = pipeline.create_time_series_dataset(frame, reference_dataset=self.training_ds)
-        for i, row in ds.decoded_index.reset_index(drop=True).iterrows():
-            start, end = int(row.time_idx_first_prediction), int(row.time_idx_last)
-            if start <= frame.loc[idx, "time_idx"] <= end:
-                _, (_, weight) = ds[i]
-                self.assertIsNotNone(weight, "Imputed target receives default full weight")
-                self.assertEqual(float(weight[int(frame.loc[idx, "time_idx"]) - start]), 0.)
+        self.assertGreater(ds.stage_a_window_stats["nonobserved_target_occurrences"], 0)
+        for row in ds.decoded_index.itertuples():
+            self.assertFalse(row.time_idx_first_prediction <= frame.loc[idx, "time_idx"] <= row.time_idx_last)
+
+    def test_nonobserved_decoder_value_cannot_change_supervised_loss(self):
+        # Actual PF loaders + production ClinicalQuantileLoss.forward/update.
+        # Fixed predictions isolate supervised loss from encoder effects.
+        frame = self.val[self.val.subject_id == "synthetic_A"].copy()
+        idx = frame.index[40]
+        frame.loc[idx, "target_observed"] = False
+        frame.loc[idx, "cgm_gap_flag"] = 1.
+        results = []
+        for value in (35., 390.):
+            frame.loc[idx, "glucose_mg_dl"] = value
+            ds = pipeline.create_time_series_dataset(frame, reference_dataset=self.training_ds)
+            metric = pipeline.ClinicalQuantileLoss(quantiles=pipeline.QUANTILES)
+            for _, (target, weight) in ds.to_dataloader(train=False, batch_size=8, num_workers=0):
+                predicted = torch.full((*target.shape, len(pipeline.QUANTILES)), 150.)
+                metric.update(predicted, (target, weight))
+            results.append((metric.compute(), ds.decoded_index.copy(), ds.stage_a_window_stats))
+        torch.testing.assert_close(results[0][0], results[1][0], rtol=0, atol=0)
+        pd.testing.assert_frame_equal(results[0][1], results[1][1])
+        self.assertGreater(results[0][2]["excluded_windows"], 0)
+        # Positive control: changing an observed label changes the same loss.
+        frame.loc[frame.index[-1], "glucose_mg_dl"] += 100.
+        ds = pipeline.create_time_series_dataset(frame, reference_dataset=self.training_ds)
+        metric = pipeline.ClinicalQuantileLoss(quantiles=pipeline.QUANTILES)
+        for _, (target, weight) in ds.to_dataloader(train=False, batch_size=8, num_workers=0):
+            metric.update(torch.full((*target.shape, len(pipeline.QUANTILES)), 150.), (target, weight))
+        self.assertNotEqual(float(metric.compute()), float(results[0][0]))
+
+    def test_events_during_cgm_gap_and_elapsed_lags_are_preserved(self):
+        frame = processed(self.root / "events-gap.xml", n=300, missing=range(50, 120))
+        self.assertEqual(len(frame), 300)
+        # Fixture has bolus + meal at step 111, while CGM is unresolved.
+        self.assertTrue(pd.isna(frame.glucose_mg_dl.iloc[111]))
+        self.assertEqual(frame.bolus_dose.iloc[111], 2.)
+        self.assertEqual(frame.bolus_event.iloc[111], 1.)
+        self.assertEqual(frame.bolus_last_1h.iloc[120], 2.)
+        self.assertGreater(frame.insulin_on_board.iloc[120], 0.)
+        self.assertGreater(frame.carb_on_board.iloc[120], 0.)
+        self.assertEqual(frame.exercise_duration_min.iloc[71], 15.)
+        computed = pipeline._compute_long_window_features(frame)
+        self.assertEqual(computed.glucose_lag_1_available.iloc[120], 0.)
+        self.assertEqual(computed.glucose_lag_1.iloc[120], 0.)
+        self.assertEqual(computed.glucose_lag_1_available.iloc[121], 1.)
+        self.assertEqual(computed.glucose_lag_1.iloc[121], frame.glucose_mg_dl.iloc[120])
+
+    def test_bolus_prior_uses_same_history_for_all_splits(self):
+        for split, output in (("train", self.train), ("val", self.val), ("test", self.test)):
+            for subject in output.subject_id.unique():
+                current = output[output.subject_id == subject]
+                source = self.source[self.source.subject_id == subject].sort_values("timestamp")
+                # Synthetic XMLs are contiguous. Independent reference, including current bin.
+                history = source[source.timestamp <= current.timestamp.max()]
+                expected = history.set_index("timestamp").bolus_event.rolling(288, min_periods=1).mean()
+                np.testing.assert_allclose(current.bolus_event_prior, expected.loc[current.timestamp])
+        self.assertNotIn("correction_bolus_prior", pipeline.TIME_VARYING_UNKNOWN_REALS)
+        self.assertIn("bolus_event_prior", pipeline.TIME_VARYING_UNKNOWN_REALS)
+
+    def test_evaluation_guard_rejects_unobserved_targets(self):
+        from ml.scripts.observed_windows import assert_observed_evaluation
+        assert_observed_evaluation(self.validation_ds, self.val)
+        changed = self.val.copy()
+        changed.loc[changed.index[40], "target_observed"] = False
+        with self.assertRaisesRegex(ValueError, "unobserved decoder"):
+            assert_observed_evaluation(self.validation_ds, changed)
 
 
 if __name__ == "__main__":

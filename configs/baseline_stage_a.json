@@ -1,0 +1,13 @@
+{
+  "protocol": "baseline_v1_stage_a",
+  "raw_dir": "ml/data/raw/OhioT1DM",
+  "output_parent": "ml/data/processed",
+  "resample_freq": "5min",
+  "encoder_ffill_limit_steps": 6,
+  "context": 48,
+  "horizon": 12,
+  "split": "per_subject_85pct_encoder_eligible_rows_boundary_retaining_full_grid",
+  "decoder_policy": "exclude_window_if_any_target_unobserved",
+  "encoder_policy": "exclude_window_if_any_glucose_unresolved",
+  "bolus_prior": "binary_event_trailing_mean_288_steps_including_current_min_periods_1"
+}

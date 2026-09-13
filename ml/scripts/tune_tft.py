@@ -119,8 +119,8 @@ log = logging.getLogger(__name__)
 # Validation semantics changed from predict=True (one final window per subject) to
 # full rolling validation. Old Optuna scores are not comparable, so use a fresh
 # study/database instead of load_if_exists on the legacy study.
-STUDY_NAME = "tft_optimization_v3_audited"
-STORAGE_PATH = MODEL_DIR / "optuna_audited_v3.db"
+STUDY_NAME = "tft_stage_a_v1"
+STORAGE_PATH = MODEL_DIR / "optuna_stage_a_v1.db"
 STORAGE_URL  = f"sqlite:///{STORAGE_PATH}"
 
 TRIAL_EPOCHS      = 25
@@ -140,6 +140,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Optuna hyperparameter search dla TFT Population Model"
     )
+    p.add_argument("--data-dir", type=Path, default=ROOT / "ml/data/processed")
     p.add_argument(
         "--n-trials", type=int, default=20,
         help="Liczba triali do wykonania w tej sesji (default: 20)"
@@ -435,7 +436,7 @@ def main() -> None:
     # ── Wczytaj dane i zbuduj datasety RAZ dla wszystkich triali ─────────
     # [FIX-T2] TimeSeriesDataSet budowany tutaj, nie w objective()
     log.info("Wczytywanie danych...")
-    train_df, val_df = load_and_preprocess_data()
+    train_df, val_df = load_and_preprocess_data(args.data_dir)
     log.info(f"  Train: {len(train_df):,} rows | Val: {len(val_df):,} rows")
 
     log.info("Budowanie TimeSeriesDataSets (raz dla wszystkich triali)...")
