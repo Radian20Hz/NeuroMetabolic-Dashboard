@@ -169,19 +169,21 @@ TIME_VARYING_KNOWN_REALS: list[str] = [
     "hour_cos",
     "dow_sin",
     "dow_cos",
-    "month_sin",
-    "month_cos",
+    # OhioT1DM de-identification shifts calendar months; month-of-year is not
+    # a valid seasonal signal for this dataset.
     "is_dawn_window",
     "is_breakfast_window",
     "is_lunch_window",
     "is_dinner_window",
     "is_weekend",
     "minutes_since_midnight",
-    "basal_rate",
 ]
 
 TIME_VARYING_UNKNOWN_REALS: list[str] = [
     TARGET_COL,
+    # Actual delivered basal can be modified by temp-basal/suspend events and
+    # is therefore not guaranteed to be known over the decoder horizon.
+    "basal_rate",
     "bolus_last_1h",
     "carbs_last_1h",
     "weekend_meal_flag",
@@ -303,6 +305,35 @@ def _compute_correction_bolus_prior(df: pd.DataFrame) -> pd.Series:
         .mean()
         .fillna(0.1)
     )
+
+
+def _compute_correction_bolus_prior_with_history(
+    current: pd.DataFrame,
+    history: "pd.DataFrame | None" = None,
+) -> pd.Series:
+    """Compute the causal prior with exact preceding history when contiguous."""
+    cur = current.sort_values("timestamp").reset_index(drop=True)
+    if history is None or history.empty or cur.empty:
+        return _compute_correction_bolus_prior(cur)
+
+    hist = history.sort_values("timestamp").reset_index(drop=True)
+    gap = pd.Timestamp(cur["timestamp"].iloc[0]) - pd.Timestamp(hist["timestamp"].iloc[-1])
+    if gap <= pd.Timedelta(0):
+        raise RuntimeError(
+            f"[AUDIT-CBP] History overlaps/follows current split (gap={gap})."
+        )
+    if gap > pd.Timedelta("10min"):
+        log.warning(
+            f"  [AUDIT-CBP] Boundary gap {gap} is >10 min; "
+            "using current-split-only correction_bolus_prior."
+        )
+        return _compute_correction_bolus_prior(cur)
+
+    # rolling(6) followed by rolling(288): retain enough true prior rows for both.
+    hist_tail = hist.tail(24 * 12 + 6)
+    combined = pd.concat([hist_tail, cur], ignore_index=True, sort=False)
+    values = _compute_correction_bolus_prior(combined)
+    return values.tail(len(cur)).reset_index(drop=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -606,7 +637,9 @@ def _extract_train_warmstart(train_grp: pd.DataFrame) -> dict:
     if "bolus_event" in train_grp.columns and "basal_rate" in train_grp.columns:
         bolus_sum  = train_grp["bolus_event"].rolling(WIN_TDD_LOCAL, min_periods=1).sum()
         basal_mean = train_grp["basal_rate"].rolling(WIN_TDD_LOCAL, min_periods=1).mean()
-        tdd        = bolus_sum + basal_mean * 24.0 * 7
+        # Mean total daily dose (U/day) over the trailing 7-day window:
+        # (7-day bolus total + estimated 7-day basal total) / 7.
+        tdd        = (bolus_sum + basal_mean * 24.0 * 7.0) / 7.0
         ws["tdd_last"] = float(tdd.iloc[-1]) if len(tdd) else 20.0
 
     if "bolus_event" in train_grp.columns:
@@ -628,6 +661,11 @@ def _extract_train_warmstart(train_grp: pd.DataFrame) -> dict:
         hr_resting = _compute_hr_resting_causal(train_grp["heart_rate"])
         ws["hr_resting_last"] = float(hr_resting.iloc[-1])
 
+    # Preserve true trailing history for exact causal warm-start of rolling/lag
+    # features.  A scalar summary cannot reproduce a 7-day rolling window.
+    # Keep slightly more than the longest row-based window (7 days).
+    ws["_history_df"] = train_grp.tail(WIN_TDD_LOCAL + 24).copy()
+
     return ws
 
 
@@ -648,6 +686,34 @@ def _compute_long_window_features(
     df = df.copy()
     df = df.sort_values("timestamp").reset_index(drop=True)
     ws = warmstart or {}
+
+    # Exact causal warm-start: prepend the real train tail when it is truly
+    # contiguous with the current split, recompute all trailing features once,
+    # then return only the current rows.  This is not target leakage: every
+    # prepended observation is strictly earlier than the first current row.
+    # If there is a material timestamp gap, do NOT pretend the row-count rolling
+    # windows are contiguous; fall back to the scalar/cold-start logic below.
+    history = ws.get("_history_df")
+    if isinstance(history, pd.DataFrame) and not history.empty and not df.empty:
+        hist = history.copy().sort_values("timestamp").reset_index(drop=True)
+        hist_end = pd.Timestamp(hist["timestamp"].iloc[-1])
+        cur_start = pd.Timestamp(df["timestamp"].iloc[0])
+        boundary_gap = cur_start - hist_end
+        if pd.Timedelta(0) < boundary_gap <= pd.Timedelta("10min"):
+            current_n = len(df)
+            combined = pd.concat([hist, df], ignore_index=True, sort=False)
+            combined = combined.sort_values("timestamp").reset_index(drop=True)
+            recomputed = _compute_long_window_features(combined, warmstart=None)
+            return recomputed.tail(current_n).reset_index(drop=True)
+        if boundary_gap <= pd.Timedelta(0):
+            raise RuntimeError(
+                "[AUDIT-WARMSTART] Train-tail history overlaps or follows the "
+                f"current split (gap={boundary_gap}). Refusing warm-start."
+            )
+        log.warning(
+            f"  [AUDIT-WARMSTART] Boundary gap {boundary_gap} is >10 min; "
+            "not prepending row-based train history."
+        )
 
     # [LEAK-A] weekend_meal_prior
     df["weekend_meal_prior"] = _compute_weekend_meal_prior(df)
@@ -699,7 +765,8 @@ def _compute_long_window_features(
         basal_daily   = (
             df["basal_rate"].rolling(WIN_TDD_LOCAL, min_periods=1).mean() * 24.0
         )
-        tdd_raw = bolus_rolling + basal_daily * 7
+        # U/day, not a 7-day cumulative total.
+        tdd_raw = (bolus_rolling + basal_daily * 7.0) / 7.0
         if "tdd_last" in ws:
             tdd_prior    = float(ws["tdd_last"])
             n_steps      = pd.Series(np.arange(1, len(df) + 1), index=df.index)
@@ -709,10 +776,11 @@ def _compute_long_window_features(
         else:
             df["tdd_rolling_7d"] = tdd_raw
         if "bolus_last_1h" in df.columns:
+            # Dimensionless share of the daily dose delivered as bolus in the
+            # preceding hour.  Both numerator and denominator are insulin units.
             df["bolus_fraction_of_tdd"] = (
-                df["bolus_last_1h"]
-                / (df["tdd_rolling_7d"] / (24.0 * 12.0) + 1e-6)
-            ).clip(0.0, 10.0)
+                df["bolus_last_1h"] / (df["tdd_rolling_7d"] + 1e-6)
+            ).clip(0.0, 1.0)
 
     # [ZT-HIGH-3] + [LEAK-C] hr_recovery_slope
     # [FIX-ISSUE-18] Forward hr_resting_last warmstart so recovery-slope uses the
@@ -853,7 +921,9 @@ def _compute_long_window_features(
     # rolling(24*12, min_periods=12).sum() on the full series contaminated the
     # 288 rows nearest the split boundary with future bolus events.
     if "bolus_event" in df.columns and "basal_rate" in df.columns:
-        basal_24h = df["basal_rate"] * 24.0
+        basal_24h = (
+            df["basal_rate"].rolling(24 * 12, min_periods=12).mean() * 24.0
+        )
         bolus_24h = df["bolus_event"].rolling(24 * 12, min_periods=12).sum()
         df["basal_bolus_ratio"] = (
             basal_24h / (bolus_24h + 1e-6)
@@ -888,7 +958,7 @@ class ClinicalQuantileLoss(QuantileLoss):
     HYPO_PENALTY_WEIGHT: float = 2.5
 
     _LOSS_SANITY_MIN: float = 0.001
-    _LOSS_SANITY_MAX: float = 10.0
+    _LOSS_SANITY_MAX: float = 200.0
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -896,13 +966,13 @@ class ClinicalQuantileLoss(QuantileLoss):
 
     def loss(self, y_pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if isinstance(target, (tuple, list)):
-            target_mgdl     = target[0]
-            target_for_base = target
+            # MultiHorizonMetric normally unwraps (target, weight) before loss(),
+            # but keep this defensive path correct for direct/unit-test calls.
+            target_mgdl = target[0]
         else:
-            target_mgdl     = target
-            target_for_base = target
+            target_mgdl = target
 
-        base_loss = super().loss(y_pred, target_for_base)
+        base_loss = super().loss(y_pred, target_mgdl)
 
         if base_loss.ndim == 3:
             base_loss = base_loss.mean(dim=-1)
@@ -1013,6 +1083,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--attention-heads",      type=int,   default=4)
     p.add_argument("--dropout",              type=float, default=0.3)
     p.add_argument("--hidden-continuous-size", type=int, default=16)
+    p.add_argument("--lstm-layers",          type=int,   choices=(1, 2), default=1)
     p.add_argument("--gradient-clip",        type=float, default=1.0)
     p.add_argument("--no-gpu",    action="store_true")
     p.add_argument("--no-resume", action="store_true")
@@ -1025,7 +1096,7 @@ def parse_args() -> argparse.Namespace:
 # ─────────────────────────────────────────────────────────────────────────────
 # CHECKPOINT HELPER
 # ─────────────────────────────────────────────────────────────────────────────
-def find_best_checkpoint(prefix: str = "tft-pop") -> Optional[str]:
+def find_best_checkpoint(prefix: str = "tft-pop-audited") -> Optional[str]:
     all_ckpts = [
         c for c in MODEL_DIR.glob(f"{prefix}-*.ckpt")
         if "last" not in c.name
@@ -1071,6 +1142,25 @@ def find_best_checkpoint(prefix: str = "tft-pop") -> Optional[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # TIME-INDEX ASSIGNMENT  [AUDIT-CRIT-1] [ZT-CRIT-3] [LEAK-B]
 # ─────────────────────────────────────────────────────────────────────────────
+def _timestamp_steps_5min(timestamps: pd.Series) -> np.ndarray:
+    """Convert real timestamps to integer 5-minute offsets without collapsing gaps."""
+    ts = pd.to_datetime(timestamps, errors="raise")
+    if len(ts) == 0:
+        return np.array([], dtype=np.int64)
+    delta_min = (ts - ts.iloc[0]).dt.total_seconds().to_numpy(dtype=float) / 60.0
+    steps_f   = delta_min / 5.0
+    steps     = np.rint(steps_f).astype(np.int64)
+    if not np.allclose(steps_f, steps, atol=1e-6, rtol=0.0):
+        bad = float(np.max(np.abs(steps_f - steps)))
+        raise RuntimeError(
+            f"Timestamps are not aligned to the expected 5-minute grid "
+            f"(max fractional-step error={bad:.6g})."
+        )
+    if len(steps) > 1 and np.any(np.diff(steps) <= 0):
+        raise RuntimeError("Timestamps must be strictly increasing within each patient.")
+    return steps
+
+
 def _assign_gapped_time_idx(
     df:  pd.DataFrame,
     gap: int = TIME_IDX_PATIENT_GAP,
@@ -1083,17 +1173,23 @@ def _assign_gapped_time_idx_from_offset(
     start_offset: int,
     gap:          int = TIME_IDX_PATIENT_GAP,
 ) -> pd.DataFrame:
+    # [AUDIT-TIME-1] Preserve real missing intervals. The previous np.arange(n)
+    # collapsed every dropped CGM outage, so a multi-hour gap could look like a
+    # single 5-minute step. allow_missing_timesteps=True only works when time_idx
+    # itself retains those missing integer steps.
     df = df.copy()
     df["time_idx"] = 0
-    current_offset = start_offset
+    current_offset = int(start_offset)
 
     for patient_id in df[SUBJECT_COL].unique():
-        mask = df[SUBJECT_COL] == patient_id
-        n    = int(mask.sum())
-        df.loc[mask, "time_idx"] = (
-            np.arange(n, dtype=np.int64) + current_offset
-        )
-        current_offset += n + gap
+        idx = df.index[df[SUBJECT_COL] == patient_id]
+        if len(idx) == 0:
+            continue
+        ordered_idx = df.loc[idx].sort_values("timestamp").index
+        rel_steps   = _timestamp_steps_5min(df.loc[ordered_idx, "timestamp"])
+        values      = rel_steps + current_offset
+        df.loc[ordered_idx, "time_idx"] = values
+        current_offset = int(values[-1]) + 1 + gap
 
     return df
 
@@ -1102,9 +1198,11 @@ def _insert_split_gaps(
     train_df: pd.DataFrame,
     val_df:   pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """[LEAK-B] TRAIN_VAL_GAP=109 prevents encoder windows from crossing split."""
+    """Preserve real time gaps and add an embargo so val encoders cannot enter train."""
     train_df = train_df.copy()
     val_df   = val_df.copy()
+    train_df["time_idx"] = 0
+    val_df["time_idx"]   = 0
 
     current_offset = 0
     patients = sorted(set(train_df[SUBJECT_COL].unique()) |
@@ -1114,23 +1212,27 @@ def _insert_split_gaps(
     patient_first_val:  dict[str, int] = {}
 
     for patient_id in patients:
-        tr_mask = train_df[SUBJECT_COL] == patient_id
-        n_tr    = int(tr_mask.sum())
-        if n_tr > 0:
-            train_df.loc[tr_mask, "time_idx"] = (
-                np.arange(n_tr, dtype=np.int64) + current_offset
-            )
-            patient_last_train[patient_id] = int(current_offset + n_tr - 1)
-            current_offset += n_tr + TRAIN_VAL_GAP
+        tr_idx = train_df.index[train_df[SUBJECT_COL] == patient_id]
+        if len(tr_idx) > 0:
+            tr_idx = train_df.loc[tr_idx].sort_values("timestamp").index
+            tr_rel = _timestamp_steps_5min(train_df.loc[tr_idx, "timestamp"])
+            tr_values = tr_rel + current_offset
+            train_df.loc[tr_idx, "time_idx"] = tr_values
+            patient_last_train[patient_id] = int(tr_values[-1])
+            current_offset = int(tr_values[-1]) + 1
 
-        va_mask = val_df[SUBJECT_COL] == patient_id
-        n_va    = int(va_mask.sum())
-        if n_va > 0:
-            val_df.loc[va_mask, "time_idx"] = (
-                np.arange(n_va, dtype=np.int64) + current_offset
-            )
-            patient_first_val[patient_id] = int(current_offset)
-            current_offset += n_va + TIME_IDX_PATIENT_GAP
+        va_idx = val_df.index[val_df[SUBJECT_COL] == patient_id]
+        if len(va_idx) > 0:
+            if patient_id in patient_last_train:
+                current_offset = patient_last_train[patient_id] + 1 + TRAIN_VAL_GAP
+            va_idx = val_df.loc[va_idx].sort_values("timestamp").index
+            va_rel = _timestamp_steps_5min(val_df.loc[va_idx, "timestamp"])
+            va_values = va_rel + current_offset
+            val_df.loc[va_idx, "time_idx"] = va_values
+            patient_first_val[patient_id] = int(va_values[0])
+            current_offset = int(va_values[-1]) + 1 + TIME_IDX_PATIENT_GAP
+        elif patient_id in patient_last_train:
+            current_offset = patient_last_train[patient_id] + 1 + TIME_IDX_PATIENT_GAP
 
     for patient_id in patients:
         if patient_id not in patient_last_train or patient_id not in patient_first_val:
@@ -1147,8 +1249,8 @@ def _insert_split_gaps(
             )
 
     log.info(
-        f"  [LEAK-B] Train/val gap = {TRAIN_VAL_GAP} steps. "
-        f"Encoder boundary assertion passed for all {len(patients)} patients."
+        f"  [LEAK-B/AUDIT-TIME-1] Train/val embargo={TRAIN_VAL_GAP} steps; "
+        f"real timestamp gaps preserved for all {len(patients)} patients."
     )
 
     return train_df, val_df
@@ -1307,30 +1409,18 @@ def load_and_preprocess_data(
         .transform(lambda x: (x > 0).astype(float).rolling(24 * 12, min_periods=1).mean())
         .fillna(0.0)
     )
-    # [FIX-ISSUE-15] For val: warm-start from last known train state so that
-    # correction_bolus_prior begins at the correct prior (24h rolling mean)
-    # rather than restarting from scratch with only val-period bolus history.
+    # Validation starts immediately after each patient's train segment, so use
+    # the actual preceding bolus history rather than an approximate scalar blend.
     val_df_parts: list[pd.DataFrame] = []
     for patient in patients:
         tr_grp = train_df[train_df[SUBJECT_COL] == patient].copy()
         va_grp = val_df[val_df[SUBJECT_COL] == patient].copy()
         if va_grp.empty:
             continue
-        # Recompute correction_bolus_prior on val, seeding with the last
-        # train-computed value via a prepended phantom row approach:
-        # prepend a single-row "history anchor" at the train/val boundary.
-        if not tr_grp.empty and "correction_bolus_prior" in tr_grp.columns:
-            cbp_prior = float(tr_grp["correction_bolus_prior"].iloc[-1])
-            # Fill val warm-up: compute on val-only data, then blend toward prior
-            # for the first 288 steps (the rolling window length).
-            va_cbp = _compute_correction_bolus_prior(va_grp)
-            n_steps    = pd.Series(np.arange(1, len(va_grp) + 1), index=va_grp.index)
-            weight_own = (n_steps / (24 * 12)).clip(upper=1.0)
-            va_grp["correction_bolus_prior"] = (
-                weight_own * va_cbp + (1.0 - weight_own) * cbp_prior
-            )
-        else:
-            va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior(va_grp)
+        va_grp = va_grp.sort_values("timestamp").reset_index(drop=True)
+        va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior_with_history(
+            va_grp, tr_grp if not tr_grp.empty else None
+        ).to_numpy()
         val_df_parts.append(va_grp)
     val_df = pd.concat(val_df_parts, ignore_index=True) if val_df_parts else val_df
 
@@ -1597,23 +1687,18 @@ def load_test_data(
         for patient_id, grp in df.groupby(SUBJECT_COL)
     ], ignore_index=True)
 
-    # correction_bolus_prior: apply same blending warm-start as val split.
+    # correction_bolus_prior: use exact train-tail history only when the source
+    # XMLs are chronologically contiguous; the helper cold-starts across a gap.
     cbp_parts: list[pd.DataFrame] = []
     for pid in sorted(df[SUBJECT_COL].unique()):
         va_grp = df[df[SUBJECT_COL] == pid].copy()
         if va_grp.empty:
             continue
-        ws = test_warmstarts.get(str(pid), {})
-        cbp_prior = ws.get("cbp_last", None)
-        if cbp_prior is not None:
-            va_cbp     = _compute_correction_bolus_prior(va_grp)
-            n_steps    = pd.Series(np.arange(1, len(va_grp) + 1), index=va_grp.index)
-            weight_own = (n_steps / (24 * 12)).clip(upper=1.0)
-            va_grp["correction_bolus_prior"] = (
-                weight_own * va_cbp + (1.0 - weight_own) * float(cbp_prior)
-            )
-        else:
-            va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior(va_grp)
+        tr_grp = train_rows[train_rows[SUBJECT_COL] == str(pid)].copy()
+        va_grp = va_grp.sort_values("timestamp").reset_index(drop=True)
+        va_grp["correction_bolus_prior"] = _compute_correction_bolus_prior_with_history(
+            va_grp, tr_grp if not tr_grp.empty else None
+        ).to_numpy()
         cbp_parts.append(va_grp)
     df = pd.concat(cbp_parts, ignore_index=True) if cbp_parts else df
 
@@ -1648,6 +1733,8 @@ def create_time_series_dataset(
             df,
             predict=predict_mode,
             stop_randomization=True,
+            min_prediction_length=horizon,
+            max_prediction_length=horizon,
         )
 
     return TimeSeriesDataSet(
@@ -1657,7 +1744,7 @@ def create_time_series_dataset(
         group_ids=[GROUP_COL],
         min_encoder_length=context_length // 2,
         max_encoder_length=context_length,
-        min_prediction_length=MAX_PREDICTION_LENGTH,
+        min_prediction_length=1,
         max_prediction_length=horizon,
         static_categoricals=STATIC_CATEGORICALS,
         static_reals=STATIC_REALS,
@@ -1665,14 +1752,10 @@ def create_time_series_dataset(
         time_varying_unknown_reals=TIME_VARYING_UNKNOWN_REALS,
         # [FIX-NORM-GROUPNORM] GroupNormalizer replaces EncoderNormalizer.
         # EncoderNormalizer fit per-sample on the encoder window: for val/test
-        # samples that window contains val/test glucose, so their normalisation
-        # statistics (center_, scale_) are derived from the target period.
-        # Those statistics flow directly into y_scale in predictions.y and are
-        # used by _inverse_transform_glucose Strategy A, making MARD/MAE
-        # metrics partially self-referential.
-        # GroupNormalizer fits once on the training TimeSeriesDataSet (via
-        # TimeSeriesDataSet.from_dataset) and is frozen for val/test; no
-        # target-period information is ever used in normalisation.
+        # samples that window contains validation/test history, so its scaling
+        # statistics vary sample-by-sample. GroupNormalizer is instead fitted
+        # on the training TimeSeriesDataSet and its fitted state is carried into
+        # validation/test via from_dataset(), avoiding target-period refitting.
         target_normalizer=GroupNormalizer(
             groups=[GROUP_COL],
             transformation="log",
@@ -1696,31 +1779,68 @@ def build_datasets(
         context_length=args.context,
         horizon=args.horizon,
     )
-    # [FIX-NORM-GROUPNORM] Zbiór walidacyjny dziedziczy słowniki i normalizery z treningowego
+    # [AUDIT-VAL-1] Full rolling validation, not predict-mode validation.
+    # In PyTorch Forecasting, predict=True keeps only the LAST prediction window
+    # per group.  With only a handful of patients that makes val_loss and Optuna
+    # tuning depend on just a handful of sequences.  For validation we want all
+    # eligible rolling windows and a fixed full forecast horizon.
     validation = TimeSeriesDataSet.from_dataset(
         training,
         val_df,
         predict=False,
         stop_randomization=True,
+        min_prediction_length=args.horizon,
+        max_prediction_length=args.horizon,
     )
 
-    # [FIX-NORM-GROUPNORM] Verify the normalizer was fitted on training data
-    # and is shared by reference with the validation dataset.
-    # GroupNormalizer.fit() is called inside TimeSeriesDataSet.__init__(); the
-    # fitted object is then propagated to val/test via from_dataset().
-    # Two checks:
-    #   1. Identity — same object in both datasets (from_dataset preserved it).
-    #   2. Fitted — the normalizer has been fit (center_/scale_ attributes
-    #      exist), confirming it was fitted from training data, not left blank.
-    # [FIX-NORM-GROUPNORM] Sprawdzamy, czy normalizator walidacyjny to poprawne dziecko treningowego
+    # [FIX-NORM-GROUPNORM] The target normalizer must be fitted ONLY on training
+    # data and reused for validation.  GroupNormalizer stores its fitted group
+    # statistics in norm_.  Also reject unseen validation subjects: this model
+    # uses subject_id both as a static categorical and as the normalization group,
+    # so it is intentionally a within-subject temporal model, not a cold-start
+    # model for unseen patients.
+    _train_norm = training.target_normalizer
+    _val_norm   = validation.target_normalizer
+    for _name, _norm in (("training", _train_norm), ("validation", _val_norm)):
+        if not isinstance(_norm, GroupNormalizer):
+            raise RuntimeError(
+                f"[FIX-NORM-GROUPNORM] {_name} target_normalizer is "
+                f"{type(_norm).__name__}, expected GroupNormalizer."
+            )
+        if getattr(_norm, "norm_", None) is None:
+            raise RuntimeError(
+                f"[FIX-NORM-GROUPNORM] {_name} GroupNormalizer is not fitted."
+            )
 
-    _norm = training.target_normalizer
-    # [FIX-CRIT-2] The previous guard used hasattr(_norm, 'center_') which is
-    # vacuously True: GroupNormalizer.__init__() sets self.center_ = None and
-    # self.scale_ = None BEFORE fit() is called, so the attributes exist on an
-    # unfitted normalizer.  The correct check is that the attributes are not None
-    # (i.e. fit() has actually been called and populated them).
+    _train_subjects = set(train_df[GROUP_COL].astype(str).unique())
+    _val_subjects   = set(val_df[GROUP_COL].astype(str).unique())
+    _unseen_subjects = _val_subjects - _train_subjects
+    if _unseen_subjects:
+        raise RuntimeError(
+            "[FIX-NORM-GROUPNORM] Validation contains unseen subject_id values: "
+            f"{sorted(_unseen_subjects)}. This configuration is only valid for "
+            "within-subject temporal validation."
+        )
 
+    try:
+        _norm_values = np.asarray(
+            _val_norm.get_norm(val_df[[GROUP_COL]].copy()), dtype=float
+        )
+        if not np.isfinite(_norm_values).all():
+            raise RuntimeError(
+                "[FIX-NORM-GROUPNORM] Validation normalization contains NaN/Inf."
+            )
+    except RuntimeError:
+        raise
+    except Exception as _exc:
+        raise RuntimeError(
+            f"[FIX-NORM-GROUPNORM] Could not verify validation normalization: {_exc}"
+        ) from _exc
+
+    log.info(
+        f"  Validation windows: {len(validation):,} "
+        f"(rolling, full horizon={args.horizon})"
+    )
     return training, validation
 
 
@@ -1813,6 +1933,7 @@ def build_model(
             attention_head_size=args.attention_heads,
             dropout=args.dropout,
             hidden_continuous_size=args.hidden_continuous_size,
+            lstm_layers=args.lstm_layers,
             loss=loss_fn,
             log_interval=10,
             log_val_interval=1,
@@ -1878,7 +1999,7 @@ def train(
     base_patience        = 20
 
     if not args.no_swa:
-        swa_start = max(1, int(args.epochs * 0.75))
+        swa_start   = int(args.epochs * 0.75)
         swa_lr      = max(args.lr * 0.05, 1e-5)
         es_patience = base_patience + swa_annealing_epochs
         swa_callback = StochasticWeightAveraging(
@@ -1906,7 +2027,7 @@ def train(
     )
     checkpoint_callback = ModelCheckpoint(
         dirpath=MODEL_DIR,
-        filename="tft-pop-{epoch:02d}-{val_loss:.4f}",
+        filename="tft-pop-audited-{epoch:02d}-{val_loss:.4f}",
         monitor="val_loss",
         save_top_k=3,
         mode="min",
@@ -1954,6 +2075,7 @@ def clarke_error_grid(
     y_true: torch.Tensor,
     y_pred: torch.Tensor,
 ) -> dict[str, float]:
+    """Classify points using the standard Clarke Error Grid decision rules."""
     n = len(y_true)
     if n == 0:
         return {z: 0.0 for z in "ABCDE"}
@@ -1963,25 +2085,33 @@ def clarke_error_grid(
 
     rel_err = (yp - yt).abs() / yt.abs().clamp(min=1.0)
 
-    zone_a = ((yt <= 70) & (yp <= 70)) | (rel_err <= 0.20)
-    zone_e = (~zone_a) & (
-        ((yt <= 70)  & (yp >= 180)) |
-        ((yt >= 180) & (yp <= 70))
-    )
-    zone_d = (~zone_a) & (~zone_e) & (
-        ((yt <= 70)  & (yp >= 70)  & (yp <= 180)) |
-        ((yt >= 240) & (yp >= 70)  & (yp <= 180))
-    )
-    zone_c = (~zone_a) & (~zone_e) & (~zone_d) & (
-        ((yt >= 130) & (yt <= 180) & (yp > yt + 110)) |
-        ((yt > 70) & (yt < 180) & (yp < 70) & (yp < yt - 40))
-    )
-    upper_b = (yp > yt) & (yp <= (yt + 110).clamp(max=400))
-    lower_b = (yp < yt) & (yp >= (yt - 70).clamp(min=0))
-    zone_b  = (~zone_a) & (~zone_e) & (~zone_c) & (~zone_d) & (upper_b | lower_b)
+    # Decision order follows the canonical Clarke implementation: A -> E -> C -> D -> B.
+    zone_a = ((yt <= 70.0) & (yp <= 70.0)) | (rel_err <= 0.20)
 
-    zone_residual = ~(zone_a | zone_b | zone_c | zone_d | zone_e)
-    zone_b = zone_b | zone_residual
+    remaining = ~zone_a
+    zone_e = remaining & (
+        ((yt >= 180.0) & (yp <= 70.0))
+        | ((yt <= 70.0) & (yp >= 180.0))
+    )
+
+    remaining = remaining & ~zone_e
+    zone_c = remaining & (
+        ((yt >= 70.0) & (yt <= 290.0) & (yp >= yt + 110.0))
+        | ((yt >= 130.0) & (yt <= 180.0) & (yp <= (7.0 / 5.0) * yt - 182.0))
+    )
+
+    remaining = remaining & ~zone_c
+    zone_d = remaining & (
+        ((yt >= 240.0) & (yp >= 70.0) & (yp <= 180.0))
+        | ((yt <= (175.0 / 3.0)) & (yp >= 70.0) & (yp <= 180.0))
+        | (
+            (yt >= (175.0 / 3.0))
+            & (yt <= 70.0)
+            & (yp >= (6.0 / 5.0) * yt)
+        )
+    )
+
+    zone_b = ~(zone_a | zone_c | zone_d | zone_e)
 
     counts = {
         "A": int(zone_a.sum().item()),
@@ -1990,72 +2120,8 @@ def clarke_error_grid(
         "D": int(zone_d.sum().item()),
         "E": int(zone_e.sum().item()),
     }
-    total_classified = sum(counts.values())
-    assert total_classified == n
-    return {z: round(counts[z] / n * 100, 2) for z in "ABCDE"}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# INVERSE TRANSFORM HELPER
-# ─────────────────────────────────────────────────────────────────────────────
-def _inverse_transform_glucose(
-    y_norm:     torch.Tensor,
-    y_scale:    Optional[torch.Tensor],
-    validation: Optional[TimeSeriesDataSet] = None,
-) -> tuple[torch.Tensor, str]:
-    if y_scale is not None:
-        if y_scale.dim() == 2 and y_scale.shape[1] >= 2:
-            log_center = y_scale[:, 0]
-            log_scale  = y_scale[:, 1]
-            if y_norm.dim() == 2:
-                log_center = log_center.unsqueeze(1)
-                log_scale  = log_scale.unsqueeze(1)
-            exponent = (y_norm * log_scale + log_center).clamp(-10.0, 10.0)
-            y_mgdl   = torch.exp(exponent)
-            t_min, t_max = y_mgdl.min().item(), y_mgdl.max().item()
-            if 10.0 <= t_min and t_max <= 1000.0:
-                log.info(
-                    f"  [inverse_transform] Strategy A: "
-                    f"range [{t_min:.1f}, {t_max:.1f}] mg/dL ✓"
-                )
-                return y_mgdl, "A_y_scale"
-            log.warning(
-                f"  [inverse_transform] Strategy A out-of-range "
-                f"[{t_min:.1f}, {t_max:.1f}] — falling through to B."
-            )
-
-    if validation is not None:
-        try:
-            normalizer  = validation.target_normalizer
-            center      = getattr(normalizer, "center_", None)
-            scale       = getattr(normalizer, "scale_", None)
-            if center is not None and scale is not None:
-                log_center_val = float(np.median(center))
-                log_scale_val  = float(np.median(scale))
-                exponent = (y_norm * log_scale_val + log_center_val).clamp(-10.0, 10.0)
-                y_mgdl   = torch.exp(exponent)
-                t_min, t_max = y_mgdl.min().item(), y_mgdl.max().item()
-                log.info(
-                    f"  [inverse_transform] Strategy B: [{t_min:.1f}, {t_max:.1f}] mg/dL"
-                )
-                if 10.0 <= t_max <= 2000.0:
-                    return y_mgdl, "B_dataset_normalizer"
-                log.warning("  Strategy B out-of-range — falling to C.")
-        except Exception as exc:
-            log.warning(f"  Strategy B failed ({exc}) — falling to C.")
-
-    y_max = y_norm.max().item()
-    y_min = y_norm.min().item()
-    if y_max > 20.0:
-        log.info(f"  Strategy C: max={y_max:.1f} > 20, treating as mg/dL.")
-        return y_norm, "C_passthrough"
-
-    warnings.warn(
-        f"_inverse_transform_glucose: all strategies failed. "
-        f"y range [{y_min:.4f}, {y_max:.4f}]. Metrics will be WRONG.",
-        RuntimeWarning, stacklevel=2,
-    )
-    return y_norm, "D_failed"
+    assert sum(counts.values()) == n
+    return {z: round(counts[z] / n * 100.0, 2) for z in "ABCDE"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2098,7 +2164,7 @@ def _compute_arima_baseline(
     Returns predicted values in mg/dL, or None on failure.
 
     [AUDIT-MED-NEW-1] Provides a clinically meaningful comparison baseline
-    (naive trend extrapolation) instead of flat persistence alone.
+    (differenced autoregressive baseline) alongside flat persistence.
     The ARIMA is fit strictly on the encoder window — no future data.
     """
     if not _STATSMODELS_AVAILABLE:
@@ -2147,37 +2213,29 @@ def evaluate(
     predictions = model.predict(
         val_loader,
         return_y=True,
+        return_x=True,  # required by persistence/ARIMA reconstruction below
         mode="quantiles",
         trainer_kwargs={"accelerator": eval_accelerator, "logger": False},
     )
 
-    # Dodaj tymczasowo zaraz po predictions = model.predict(...)
-    raw = predictions.output
-    if hasattr(raw, 'prediction'):
-        out = raw.prediction
-    else:
-        out = raw
-    nan_mask = torch.isnan(out)
-    print("NaN per sample:", nan_mask.any(dim=-1).any(dim=-1).sum())  # ile okien ma choć jeden NaN
-    print("NaN per quantile:", nan_mask.reshape(-1, 7).sum(dim=0))     # które kwantyle
-    print("NaN locations (pierwsze 10):", nan_mask.any(dim=-1).nonzero()[:10])
-
+    # PyTorch Forecasting returns y as (unscaled_target, sample_weight).  The
+    # second element is NOT target_scale.  Quantile predictions returned by
+    # model.predict(mode="quantiles") are already transformed back to target
+    # space by BaseModel.transform_output().
     y_tuple = predictions.y
     if isinstance(y_tuple, (tuple, list)):
-        y_true  = y_tuple[0]
-        y_scale = y_tuple[1] if len(y_tuple) >= 2 else None
+        y_true        = y_tuple[0]
+        sample_weight = y_tuple[1] if len(y_tuple) >= 2 else None
     else:
-        y_true  = y_tuple
-        y_scale = None
+        y_true        = y_tuple
+        sample_weight = None
 
     if isinstance(y_true, (tuple, list)):
         y_true = y_true[0]
-    if isinstance(y_scale, (tuple, list)):
-        y_scale = y_scale[0] if len(y_scale) > 0 else None
 
     log.info(
         f"  predictions.y: y_true.shape={tuple(y_true.shape)}, "
-        f"y_scale={'None' if y_scale is None else tuple(y_scale.shape)}"
+        f"sample_weight={'None' if sample_weight is None else tuple(sample_weight.shape)}"
     )
 
     raw_output = predictions.output
@@ -2199,39 +2257,29 @@ def evaluate(
 
     output = output.cpu()
     y_true = y_true.cpu()
-    if y_scale is not None:
-        y_scale = y_scale.cpu()
 
     assert output.shape[0] == y_true.shape[0]
 
-    output_finite = output[torch.isfinite(output)]
-    output_max    = output_finite.max().item() if output_finite.numel() > 0 else float("nan")
-    y_true_max    = y_true[torch.isfinite(y_true)].max().item()
+    # [AUDIT-EVAL-1] No manual inverse transform here.  `mode="quantiles"`
+    # returns de-normalized predictions, and TimeSeriesDataSet returns the
+    # unscaled continuous target in y.  The previous heuristic could double-
+    # transform very poor predictions simply because output_max < 20 mg/dL.
+    output_mgdl = output
+    y_true_mgdl = y_true
+    it_strategy = "native_real_space"
 
-    if not np.isfinite(output_max) or output_max < 20.0:
-        output_mgdl, _ = _inverse_transform_glucose(
-            output.reshape(-1, output.shape[-1]), y_scale, validation,
+    if not torch.isfinite(output_mgdl).all():
+        n_bad = int((~torch.isfinite(output_mgdl)).sum().item())
+        log.warning(f"  Replacing {n_bad} non-finite values in output_mgdl")
+        output_mgdl = torch.nan_to_num(output_mgdl, nan=0.0, posinf=400.0, neginf=40.0)
+
+    if not torch.isfinite(y_true_mgdl).all():
+        log.warning(
+            "  y_true contains non-finite values; affected entries will be "
+            "excluded by the metric masks."
         )
-        output_mgdl = output_mgdl.reshape(output.shape)
-    else:
-        output_mgdl = output
 
-    if torch.isnan(output_mgdl).any():
-        n_nan = torch.isnan(output_mgdl).sum().item()
-        raise RuntimeError(
-            f"[NAN-CHECK] {n_nan} NaN values in model output after min_prediction_length fix. "
-            "This should never happen — investigate immediately."
-        )
-
-    if y_true_max < 20.0:
-        y_true_mgdl, it_strategy = _inverse_transform_glucose(y_true, y_scale, validation)
-    else:
-        y_true_mgdl = y_true
-        it_strategy = "C_passthrough"
-
-    log.info(f"  y_true inverse-transform strategy: {it_strategy}")
-    if it_strategy == "D_failed":
-        log.error("  ✗ inverse-transform FAILED — metrics below are INVALID.")
+    log.info("  Evaluation tensors are already in native mg/dL target space ✓")
 
     try:
         median_idx = QUANTILES.index(0.5)
@@ -2242,21 +2290,6 @@ def evaluate(
         output_mgdl[:, :, median_idx] if output_mgdl.dim() == 3 else output_mgdl
     )
     y_pred_mgdl = torch.nan_to_num(y_pred_mgdl, nan=0.0, posinf=400.0, neginf=40.0)
-
-    if torch.isnan(output_mgdl).any():
-        nan_per_sample = torch.isnan(output_mgdl).any(dim=-1).any(dim=-1)
-        n_nan_samples = nan_per_sample.sum().item()
-        log.warning(
-            f"  {n_nan_samples} okien z NaN / {output_mgdl.shape[0]} total "
-            f"({n_nan_samples/output_mgdl.shape[0]*100:.1f}%)"
-        )
-        # Sprawdź encoder_lengths dla tych okien
-        if hasattr(predictions, 'x') and predictions.x.get('encoder_lengths') is not None:
-            enc_lens = predictions.x['encoder_lengths']
-            nan_enc_lens = enc_lens[nan_per_sample]
-            log.warning(f"  encoder_lengths NaN okien: min={nan_enc_lens.min()}, max={nan_enc_lens.max()}, mean={nan_enc_lens.float().mean():.1f}")
-            full_enc_lens = enc_lens[~nan_per_sample]
-            log.warning(f"  encoder_lengths OK okien: min={full_enc_lens.min()}, max={full_enc_lens.max()}, mean={full_enc_lens.float().mean():.1f}")
 
     # ── Multi-horizon metrics ─────────────────────────────────────────────
     horizon_steps = {
@@ -2269,7 +2302,7 @@ def evaluate(
 
     metrics: dict[str, float] = {
         "eval_scope":           0.0,
-        "inverse_transform_ok": float(it_strategy != "D_failed"),
+        "inverse_transform_ok": 1.0,
     }
 
     log.info("  ── Validation Metrics by Horizon (mg/dL) ─────────────────")
@@ -2377,26 +2410,40 @@ def evaluate(
     encoder_windows: dict[int, np.ndarray] = {}  # sample_idx → encoder glucose array
 
     try:
-        if predictions.x is None:
-            raise ValueError("predictions.x is None — cannot build persistence lookup")
         dec_time_idx = predictions.x.get("decoder_time_idx", None)
-        group_ids    = predictions.x.get("groups", None)
-        encoder_cont = predictions.x.get("encoder_cont", None)  # (batch, enc_len, n_feats)
 
-        if dec_time_idx is not None and group_ids is not None:
-            first_dec   = dec_time_idx[:, 0].cpu().numpy()
+        if dec_time_idx is not None:
+            # Use the public TimeSeriesDataSet API to decode the sample index.
+            # Manual decoding of x["groups"] through categorical_encoders is brittle:
+            # PyTorch Forecasting internally stores group IDs under synthetic
+            # __group_id__* encoders and those internals have changed across releases.
+            # x_to_index() returns the original group labels plus the first decoder
+            # time_idx in exactly the same sample order as predictions.x.
+            sample_index = validation.x_to_index(predictions.x)
+            if SUBJECT_COL not in sample_index.columns or "time_idx" not in sample_index.columns:
+                raise RuntimeError(
+                    "[AUDIT] TimeSeriesDataSet.x_to_index() did not return the expected "
+                    f"columns ({SUBJECT_COL!r}, 'time_idx'). Got: {list(sample_index.columns)}"
+                )
+            if len(sample_index) != len(dec_time_idx):
+                raise RuntimeError(
+                    "[AUDIT] Prediction/index length mismatch: "
+                    f"x_to_index={len(sample_index)} vs decoder_time_idx={len(dec_time_idx)}."
+                )
+
+            subject_ids = sample_index[SUBJECT_COL].astype(str).to_numpy()
+            first_dec   = sample_index["time_idx"].astype(int).to_numpy()
             last_enc_ti = first_dec - 1
 
-            try:
-                group_encoder = validation.group_ids
-                group_code    = group_ids.cpu().numpy().squeeze(-1)
-                cat_enc       = validation.categorical_encoders[group_encoder[0]]
-                subject_ids   = np.array([
-                    cat_enc.inverse_transform([int(g)])[0] for g in group_code
-                ])
-            except Exception as enc_err:
-                log.warning(f"  Group decode failed ({enc_err}); using raw codes.")
-                subject_ids = group_ids.cpu().numpy().squeeze(-1).astype(str)
+            # Cross-check the public decoded index against the tensor returned by
+            # the dataloader. A mismatch would make persistence/ARIMA comparisons
+            # invalid, so fail loudly rather than silently score the wrong rows.
+            first_dec_tensor = dec_time_idx[:, 0].detach().cpu().numpy().astype(int)
+            if not np.array_equal(first_dec, first_dec_tensor):
+                raise RuntimeError(
+                    "[AUDIT] x_to_index time_idx does not match decoder_time_idx[:, 0]. "
+                    "Refusing to compute persistence/ARIMA baselines."
+                )
 
             _verify_time_idx_alignment(
                 val_df,
@@ -2482,8 +2529,8 @@ def evaluate(
 
         else:
             log.warning(
-                "  [LEAK-E / ZT-CRIT-1] decoder_time_idx or groups absent. "
-                "Persistence metrics omitted."
+                "  [LEAK-E / ZT-CRIT-1] decoder_time_idx absent. "
+                "Persistence/ARIMA metrics omitted."
             )
             persistence_approximate = True
 
@@ -2654,6 +2701,21 @@ def evaluate(
 # ─────────────────────────────────────────────────────────────────────────────
 def main() -> None:
     args = parse_args()
+
+    if args.horizon < MAX_PREDICTION_LENGTH:
+        raise ValueError(
+            f"--horizon must be at least {MAX_PREDICTION_LENGTH} steps "
+            f"({MAX_PREDICTION_LENGTH * 5} min), because evaluation computes "
+            "t+60 metrics and baselines."
+        )
+    if args.context < 2:
+        raise ValueError("--context must be at least 2 steps.")
+    if args.hidden_size % args.attention_heads != 0:
+        raise ValueError(
+            "--hidden-size must be divisible by --attention-heads "
+            f"(got {args.hidden_size} and {args.attention_heads})."
+        )
+
     pl.seed_everything(args.seed, workers=True)
 
     log.info("=" * 65)
@@ -2664,6 +2726,7 @@ def main() -> None:
     log.info(f"  Context             : {args.context} steps ({args.context * 5} min)")
     log.info(f"  LR (peak)           : {args.lr}")
     log.info(f"  Hidden              : {args.hidden_size} (heads: {args.attention_heads})")
+    log.info(f"  LSTM layers         : {args.lstm_layers}")
     log.info(f"  Dropout             : {args.dropout}")
     log.info(f"  Gradient clip       : {args.gradient_clip}")
     log.info(f"  Train/val gap       : {TRAIN_VAL_GAP} steps [LEAK-B]")

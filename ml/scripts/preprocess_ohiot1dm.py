@@ -254,7 +254,7 @@ _SENTINEL_NAN_COLS: frozenset[str] = frozenset({
 # ─────────────────────────────────────────────────────────────────────────────
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="OhioT1DM preprocessing — Phase 4 v11 (zero-trust audit fixes)"
+        description="OhioT1DM preprocessing — Phase 4 v17 (zero-trust audit fixes)"
     )
     p.add_argument("--data-dir", type=Path, default=RAW_DIR)
     p.add_argument("--out-dir",  type=Path, default=OUT_DIR)
@@ -315,6 +315,28 @@ def _parse_basal(root: ET.Element) -> pd.DataFrame:
     if not records:
         return pd.DataFrame(columns=["timestamp", "basal_rate"])
     return pd.DataFrame(records)
+
+
+def _parse_temp_basal(root: ET.Element) -> pd.DataFrame:
+    """Parse temporary basal intervals, which override the normal basal rate."""
+    records = []
+    for ev in root.findall(".//temp_basal/event"):
+        try:
+            ts_begin = pd.to_datetime(ev.attrib["ts_begin"], format=_TS_FMT)
+            ts_end   = pd.to_datetime(ev.attrib["ts_end"],   format=_TS_FMT)
+            rate     = float(ev.attrib["value"])
+            if ts_end <= ts_begin:
+                continue
+            records.append({
+                "ts_begin": ts_begin,
+                "ts_end":   ts_end,
+                "temp_basal_rate": rate,
+            })
+        except (KeyError, ValueError):
+            continue
+    if not records:
+        return pd.DataFrame(columns=["ts_begin", "ts_end", "temp_basal_rate"])
+    return pd.DataFrame(records).sort_values("ts_begin").reset_index(drop=True)
 
 
 def _parse_meals(root: ET.Element) -> pd.DataFrame:
@@ -427,9 +449,10 @@ def load_patient_xml(xml_path: Path) -> ET.Element:
 # ─────────────────────────────────────────────────────────────────────────────
 def resample_to_cgm_grid(
     cgm_df:      pd.DataFrame,
-    bolus_df:    pd.DataFrame,
-    basal_df:    pd.DataFrame,
-    meal_df:     pd.DataFrame,
+    bolus_df:       pd.DataFrame,
+    basal_df:       pd.DataFrame,
+    temp_basal_df:  pd.DataFrame,
+    meal_df:        pd.DataFrame,
     exercise_df: pd.DataFrame,
     basis_df:    pd.DataFrame,
     freq:        str = "5min",
@@ -461,7 +484,9 @@ def resample_to_cgm_grid(
     # Bolus
     if not bolus_df.empty:
         bolus_df = bolus_df.copy()
-        bolus_df["timestamp"] = bolus_df["timestamp"].dt.floor(freq)
+        # Causal event binning: an event at 12:04 must not appear in the 12:00 row.
+        # Assign it to the first grid timestamp at or after the event.
+        bolus_df["timestamp"] = bolus_df["timestamp"].dt.ceil(freq)
         bolus_binned = (
             bolus_df.groupby("timestamp")["bolus_dose"]
             .sum().reset_index()
@@ -486,10 +511,23 @@ def resample_to_cgm_grid(
         df["basal_rate"] = 0.0
     df["basal_rate"] = df["basal_rate"].ffill().fillna(0.0)
 
+    # Temporary basal overrides the normal basal only while the interval is active.
+    # OhioT1DM defines temp_basal as superseding <basal>, then reverting to the
+    # normal basal automatically at ts_end.  Keeping this as actual delivered basal
+    # is important for insulin/TDD features.
+    df["is_temp_basal"] = 0.0
+    if not temp_basal_df.empty:
+        for row in temp_basal_df.itertuples(index=False):
+            mask = (df["timestamp"] >= row.ts_begin) & (df["timestamp"] < row.ts_end)
+            if mask.any():
+                df.loc[mask, "basal_rate"] = float(row.temp_basal_rate)
+                df.loc[mask, "is_temp_basal"] = 1.0
+
     # Meals
     if not meal_df.empty:
         meal_df = meal_df.copy()
-        meal_df["timestamp"] = meal_df["timestamp"].dt.floor(freq)
+        # Causal event binning: never move a meal backward in time.
+        meal_df["timestamp"] = meal_df["timestamp"].dt.ceil(freq)
         meal_binned = (
             meal_df.groupby("timestamp")["carbs_g"]
             .sum().reset_index()
@@ -503,7 +541,8 @@ def resample_to_cgm_grid(
     # Exercise
     if not exercise_df.empty:
         exercise_df = exercise_df.copy()
-        exercise_df["timestamp"] = exercise_df["timestamp"].dt.floor(freq)
+        # Causal event binning: never expose an exercise event before it occurred.
+        exercise_df["timestamp"] = exercise_df["timestamp"].dt.ceil(freq)
         ex_binned = (
             exercise_df.groupby("timestamp")["exercise_duration_min"]
             .sum().reset_index()
@@ -760,7 +799,12 @@ def add_tdd_features(df: pd.DataFrame) -> pd.DataFrame:
     df["bolus_fraction_of_tdd"] = 0.0
 
     df["basal_rate_change"] = df["basal_rate"].diff(1).abs().fillna(0.0)
-    df["is_temp_basal"]     = (df["basal_rate_change"] > 0.10).astype(float)
+    # Prefer the explicit flag created from OhioT1DM <temp_basal> intervals.
+    # Fall back to the old rate-change heuristic only for legacy dataframes.
+    if "is_temp_basal" not in df.columns:
+        df["is_temp_basal"] = (df["basal_rate_change"] > 0.10).astype(float)
+    else:
+        df["is_temp_basal"] = df["is_temp_basal"].fillna(0.0).astype(float)
     return df
 
 
@@ -882,8 +926,18 @@ def add_circadian_pk_interactions(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_cgm_gap_flag(df: pd.DataFrame, original_glucose: pd.Series) -> pd.DataFrame:
-    df["cgm_gap_flag"] = original_glucose.isna().astype(float).values
+def add_cgm_gap_flag(
+    df: pd.DataFrame,
+    raw_cgm_observed: np.ndarray,
+) -> pd.DataFrame:
+    """Flag rows whose CGM value was filled rather than directly observed."""
+    observed = np.asarray(raw_cgm_observed, dtype=bool)
+    if len(observed) != len(df):
+        raise ValueError(
+            "raw_cgm_observed length does not match DataFrame length: "
+            f"{len(observed)} != {len(df)}"
+        )
+    df["cgm_gap_flag"] = (~observed).astype(float)
     return df
 
 
@@ -1160,8 +1214,9 @@ def process_patient(
 
     glucose_df  = _parse_glucose(root).sort_values("timestamp")
     bolus_df    = _parse_bolus(root).sort_values("timestamp")
-    basal_df    = _parse_basal(root).sort_values("timestamp")
-    meal_df     = _parse_meals(root).sort_values("timestamp")
+    basal_df      = _parse_basal(root).sort_values("timestamp")
+    temp_basal_df = _parse_temp_basal(root)
+    meal_df       = _parse_meals(root).sort_values("timestamp")
     exercise_df = _parse_exercise(root).sort_values("timestamp")
     basis_df    = _parse_basis_data(root).sort_values("timestamp")
 
@@ -1170,7 +1225,7 @@ def process_patient(
         return None
 
     df = resample_to_cgm_grid(
-        glucose_df, bolus_df, basal_df, meal_df, exercise_df, basis_df, freq
+        glucose_df, bolus_df, basal_df, temp_basal_df, meal_df, exercise_df, basis_df, freq
     )
 
     if df.empty or len(df) < 100:
@@ -1236,8 +1291,6 @@ def process_patient(
             log.warning(f"  Patient {patient_id} [{source_split}]: too few rows — skipping.")
             return None
 
-    original_glucose = df["glucose_mg_dl"].copy()
-
     # Feature engineering
     df = add_time_features(df)
     df = add_calendar_windows(df)
@@ -1278,7 +1331,7 @@ def process_patient(
     df = add_glucose_momentum_divergence(df)
     df = add_dynamic_isf(df)
 
-    df = add_cgm_gap_flag(df, original_glucose)
+    df = add_cgm_gap_flag(df, raw_cgm_observed_arr)
 
     df["subject_id"]   = patient_id
     df["source_split"] = source_split
@@ -1302,11 +1355,24 @@ def process_patient(
 def main() -> None:
     args = parse_args()
 
+    # All rolling-window constants in this pipeline assume 5-minute samples
+    # (e.g. 12 steps = 1 hour, 24 = 2 hours, 2016 = 7 days).  Accepting another
+    # resampling frequency would silently change the meaning of many features.
+    try:
+        resample_delta = pd.Timedelta(args.resample_freq)
+    except ValueError as exc:
+        raise ValueError(f"Invalid --resample-freq: {args.resample_freq!r}") from exc
+    if resample_delta != pd.Timedelta("5min"):
+        raise ValueError(
+            "--resample-freq must be 5min for this pipeline because feature "
+            "window lengths are calibrated to 5-minute samples."
+        )
+
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("=" * 65)
-    log.info("NMD — OhioT1DM Preprocessing Pipeline (Phase 4 v15 zero-trust fixed)")
+    log.info("NMD — OhioT1DM Preprocessing Pipeline (Phase 4 v17 zero-trust fixed)")
     log.info(f"  Raw data : {args.data_dir}")
     log.info(f"  Output   : {out_dir}")
     log.info(f"  Resample : {args.resample_freq}")

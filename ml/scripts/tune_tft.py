@@ -116,8 +116,11 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # STAŁE
 # ─────────────────────────────────────────────────────────────────────────────
-STUDY_NAME = "tft_optimization_v2_clean"
-STORAGE_PATH = MODEL_DIR / "optuna.db"
+# Validation semantics changed from predict=True (one final window per subject) to
+# full rolling validation. Old Optuna scores are not comparable, so use a fresh
+# study/database instead of load_if_exists on the legacy study.
+STUDY_NAME = "tft_optimization_v3_audited"
+STORAGE_PATH = MODEL_DIR / "optuna_audited_v3.db"
 STORAGE_URL  = f"sqlite:///{STORAGE_PATH}"
 
 TRIAL_EPOCHS      = 25
@@ -292,27 +295,45 @@ def objective(
     )
 
     # ── 6. Trening ────────────────────────────────────────────────────────
+    best_val_loss = float("inf")
+    stopped_epoch = -1
+
     try:
         trainer.fit(model, train_loader, val_loader)
+
+        # Use the BEST validation score observed by EarlyStopping, not merely
+        # the last val_loss from callback_metrics.  Returning the last value can
+        # mis-rank Optuna trials after several non-improving epochs.
+        best_score = early_stopping.best_score
+        if isinstance(best_score, torch.Tensor):
+            best_val_loss = float(best_score.detach().cpu().item())
+        elif best_score is not None:
+            best_val_loss = float(best_score)
+        else:
+            last_score = trainer.callback_metrics.get("val_loss", float("inf"))
+            if isinstance(last_score, torch.Tensor):
+                last_score = last_score.detach().cpu().item()
+            best_val_loss = float(last_score)
+
+        stopped_epoch = int(trainer.current_epoch)
+
     except optuna.exceptions.TrialPruned:
         log.info(f"  Trial {trial.number} pruned by HyperbandPruner.")
         raise
-
-    best_val_loss = trainer.callback_metrics.get("val_loss", float("inf"))
-    if isinstance(best_val_loss, torch.Tensor):
-        best_val_loss = best_val_loss.item()
+    finally:
+        # [FIX-T10] Jawne czyszczenie GPU po każdym trialu.
+        # Capture all values needed above BEFORE deleting trainer/model.
+        del model, trainer, train_loader, val_loader
+        if use_gpu:
+            torch.cuda.empty_cache()
+        gc.collect()
 
     log.info(
-        f"  Trial {trial.number} finished: val_loss={best_val_loss:.4f}  "
-        f"(stopped at epoch {trainer.current_epoch})"
+        f"  Trial {trial.number} finished: best_val_loss={best_val_loss:.4f}  "
+        f"(stopped at epoch {stopped_epoch})"
     )
 
-    del model, trainer, train_loader, val_loader
-    if use_gpu:
-        torch.cuda.empty_cache()
-    gc.collect()
-
-    return float(best_val_loss)
+    return best_val_loss
 
 
 # ─────────────────────────────────────────────────────────────────────────────
