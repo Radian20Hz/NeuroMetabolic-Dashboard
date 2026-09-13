@@ -23,7 +23,12 @@ try:
 except ImportError:
     from finite_training import require_finite
 
-PROTOCOL = "nmd-baseline-v1.0-stage-b-1"
+try:
+    from .numerical_profile import profile as numerical_profile
+except ImportError:
+    from numerical_profile import profile as numerical_profile
+
+PROTOCOL = "nmd-baseline-v1.0-stage-b-2"
 CANONICAL_STAGE_A_SHA256 = "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf"
 
 
@@ -97,7 +102,7 @@ def contract(dataset, args, quantiles):
         raise ValueError("max_steps must equal the original complete-epoch training budget")
     model_keys = ["hidden_size", "hidden_continuous_size", "attention_heads", "dropout", "lstm_layers"]
     architecture = {k:getattr(args,k) for k in model_keys}
-    result = dict(protocol=PROTOCOL, canonical_stage_a_sha256=CANONICAL_STAGE_A_SHA256,
+    result = dict(protocol=PROTOCOL, numerical_profile=numerical_profile("cpu" if args.no_gpu else "cuda"), canonical_stage_a_sha256=CANONICAL_STAGE_A_SHA256,
         dataset_sha256=data_hash, data_protocol="baseline_v1_stage_a", schema=semantic({k:parameters[k] for k in schema_keys}),
         window_index_sha256=digest(semantic(dataset.index)),
         synthetic_audit=getattr(args,"synthetic_audit",False),ordered_reals=dataset.reals, ordered_categoricals=dataset.flat_categoricals,
@@ -118,7 +123,7 @@ def contract(dataset, args, quantiles):
         seed=getattr(args,"seed",42),
         stack={k:importlib.metadata.version(k) for k in ["torch","lightning","pytorch-forecasting","numpy","pandas"]},
         python=platform.python_version(),
-        code_sha256={p.name:sha256(p) for p in [Path(__file__),Path(__file__).with_name("finite_training.py"),Path(__file__).with_name("train_tft_population_v2.py"),Path(__file__).with_name("baseline_training.py")]})
+        code_sha256={p.name:sha256(p) for p in [Path(__file__),Path(__file__).with_name("finite_training.py"),Path(__file__).with_name("train_tft_population_v2.py"),Path(__file__).with_name("baseline_training.py"),Path(__file__).with_name("numerical_profile.py")]})
     return result
 
 

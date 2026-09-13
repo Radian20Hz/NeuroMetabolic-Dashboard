@@ -1036,7 +1036,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     import json
     configured = json.loads(selected.config.read_text())
     required = {
-        "protocol": "nmd-baseline-v1.0-stage-b-1",
+        "protocol": "nmd-baseline-v1.0-stage-b-2",
         "data_protocol": "baseline_v1_stage_a",
         "canonical_stage_a_sha256": "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf",
         "precision": "32-true", "swa": False, "mid_epoch_resume": False,
@@ -1045,6 +1045,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         "early_stopping": {"monitor": "val_loss", "mode": "min", "patience": 20, "min_delta": 0.0001},
         "clinical_loss": {"factor": 2, "hypo_threshold_mg_dl": 70, "hypo_weight": 2.5},
     }
+    if __package__ in (None, ""):
+        from numerical_profile import profile
+    else:
+        from .numerical_profile import profile
+    required["numerical_profiles"] = {device: profile(device) for device in ("cpu", "cuda")}
     for key, value in required.items():
         if configured.get(key) != value:
             raise ValueError(f"Unsupported certified baseline configuration: {key}")

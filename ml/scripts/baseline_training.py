@@ -20,9 +20,11 @@ from lightning.pytorch.loggers import CSVLogger
 try:
     from .checkpoint_registry import Registry,contract,digest,atomic_json
     from .finite_training import optimizer_finite,require_finite
+    from .numerical_profile import configure as configure_numerics, verify as verify_numerics
 except ImportError:
     from checkpoint_registry import Registry,contract,digest,atomic_json
     from finite_training import optimizer_finite,require_finite
+    from numerical_profile import configure as configure_numerics, verify as verify_numerics
 
 
 class EpochSampler(torch.utils.data.Sampler):
@@ -139,6 +141,7 @@ class BoundaryCheckpoint(ModelCheckpoint):
     def on_save_checkpoint(self,trainer,module,checkpoint):
         if self.publication is None:
             raise ValueError("Only validated epoch boundaries may publish baseline checkpoints")
+        verify_numerics(self.expected["device"])
         checkpoint["nmd_checkpoint"]=self.publication
 
     def on_validation_end(self,trainer,module):
@@ -163,6 +166,7 @@ def load_model(model_cls,training,args,checkpoint,registry,expected,mode,run_id)
 
 
 def train_baseline(model,training,validation,args,checkpoint,model_root,gradient_callback,extra_callbacks=()):
+    configure_numerics("cpu" if args.no_gpu else "cuda")
     expected=contract(training,args,model.loss.quantiles)
     if expected["device"]=="cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable in this process; select CPU explicitly")
@@ -194,9 +198,10 @@ def train_baseline(model,training,validation,args,checkpoint,model_root,gradient
     trainer=pl.Trainer(max_epochs=args.epochs,max_steps=expected["budget"]["total_steps"],
         accelerator=expected["device"].replace("cuda","gpu"),devices=1,precision="32-true",
         accumulate_grad_batches=expected["data_order"]["accumulation"],gradient_clip_val=args.gradient_clip,
-        gradient_clip_algorithm="norm",callbacks=callbacks,deterministic=True,benchmark=False,
+        gradient_clip_algorithm="norm",callbacks=callbacks,deterministic="warn" if expected["device"]=="cuda" else True,benchmark=False,
         num_sanity_val_steps=0 if path else 2,logger=CSVLogger(registry.root/run_id,name="segments",version=uuid.uuid4().hex),
         enable_progress_bar=False,enable_model_summary=False,log_every_n_steps=1)
+    trainer.nmd_numerical_flags=verify_numerics(expected["device"])
     model._nmd_run_id=run_id
     trainer.nmd_registry=registry;trainer.nmd_run_id=run_id;trainer.nmd_contract=expected
     try:
