@@ -34,9 +34,15 @@ from pytorch_forecasting.data import NaNLabelEncoder
 import numpy._core.multiarray
 
 if __package__ in (None, ""):
+    from checkpoint_registry import contract as checkpoint_contract, sha256 as artifact_sha256
+    from baseline_training import registry_for, load_model as load_registered_model, train_baseline
+    from finite_training import FiniteMetric, FiniteModel, require_finite, gradient_norm, CheckedAdamW
     from temporal_protocol import regular_timeline, TARGET_OBSERVED, validate_observation_indicator
     from observed_windows import validate_dense_frame, filter_observed_windows, assert_observed_evaluation
 else:
+    from .checkpoint_registry import contract as checkpoint_contract, sha256 as artifact_sha256
+    from .baseline_training import registry_for, load_model as load_registered_model, train_baseline
+    from .finite_training import FiniteMetric, FiniteModel, require_finite, gradient_norm, CheckedAdamW
     from .temporal_protocol import regular_timeline, TARGET_OBSERVED, validate_observation_indicator
     from .observed_windows import validate_dense_frame, filter_observed_windows, assert_observed_evaluation
 
@@ -62,7 +68,6 @@ if _PTF_VERSION < (1, 0):
         stacklevel=1,
     )
 
-os.environ.setdefault("TORCH_FORCE_WEIGHTS_ONLY_LOAD", "0")
 
 warnings.filterwarnings(
     "ignore",
@@ -95,6 +100,7 @@ except ImportError:
 ROOT      = Path(__file__).resolve().parents[2]
 DATA_DIR  = ROOT / "ml" / "data" / "processed"
 MODEL_DIR = ROOT / "ml" / "models" / "baseline_v1_stage_a"
+BASELINE_REGISTRY = ROOT / "ml" / "models" / "baseline_v1_stage_b" / "runs"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -873,7 +879,7 @@ def _compute_long_window_features(
 # ─────────────────────────────────────────────────────────────────────────────
 # CLINICAL QUANTILE LOSS
 # ─────────────────────────────────────────────────────────────────────────────
-class ClinicalQuantileLoss(QuantileLoss):
+class ClinicalQuantileLoss(FiniteMetric, QuantileLoss):
     HYPO_THRESHOLD:      float = 70.0
     HYPO_PENALTY_WEIGHT: float = 2.5
 
@@ -892,6 +898,8 @@ class ClinicalQuantileLoss(QuantileLoss):
         else:
             target_mgdl = target
 
+        require_finite(target_mgdl, "target")
+        require_finite(y_pred, "prediction")
         base_loss = super().loss(y_pred, target_mgdl)
 
         if base_loss.ndim == 3:
@@ -931,17 +939,21 @@ class ClinicalQuantileLoss(QuantileLoss):
                 f"base_loss shape {tuple(base_loss.shape)}."
             )
 
-        return base_loss * weights
+        result = base_loss * weights
+        require_finite(result, "clinical per-position loss")
+        return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLINICAL TFT
 # ─────────────────────────────────────────────────────────────────────────────
-class ClinicalTFT(TemporalFusionTransformer):
+class ClinicalTFT(FiniteModel, TemporalFusionTransformer):
     COSINE_EPOCHS: int = 15
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
+        if self.trainer.max_epochs == 0:
+            raise ValueError("Training epoch budget must be positive")
+        optimizer = CheckedAdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
             weight_decay=1e-2,
@@ -990,7 +1002,7 @@ class ClinicalTFT(TemporalFusionTransformer):
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
-def parse_args() -> argparse.Namespace:
+def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Train Population TFT for glucose forecasting"
     )
@@ -1008,56 +1020,52 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gradient-clip",        type=float, default=1.0)
     p.add_argument("--no-gpu",    action="store_true")
     p.add_argument("--no-resume", action="store_true")
-    p.add_argument("--no-swa",    action="store_true")
-    p.add_argument("--num-workers", type=int, default=None)
+    p.add_argument("--no-swa", action="store_true", default=True)
+    p.add_argument("--swa", dest="no_swa", action="store_false", help="Outside certified baseline; rejected")
+    p.add_argument("--mode", choices=["fresh", "resume-last", "inference-best", "weights-only"], default="fresh")
+    p.add_argument("--run-id")
+    p.add_argument("--parent-run-id")
+    p.add_argument("--registry-dir", type=Path, default=BASELINE_REGISTRY)
+    p.add_argument("--accumulate-grad-batches", type=int, default=1)
+    p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--seed",      type=int,   default=42)
-    return p.parse_args()
+    p.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1.json")
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1.json")
+    selected, _ = selector.parse_known_args(argv)
+    import json
+    configured = json.loads(selected.config.read_text())
+    required = {
+        "protocol": "nmd-baseline-v1.0-stage-b-1",
+        "data_protocol": "baseline_v1_stage_a",
+        "canonical_stage_a_sha256": "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf",
+        "precision": "32-true", "swa": False, "mid_epoch_resume": False,
+        "resume_boundary": "completed_training_batches_and_validation",
+        "automatic_test_evaluation": False,
+        "early_stopping": {"monitor": "val_loss", "mode": "min", "patience": 20, "min_delta": 0.0001},
+        "clinical_loss": {"factor": 2, "hypo_threshold_mg_dl": 70, "hypo_weight": 2.5},
+    }
+    for key, value in required.items():
+        if configured.get(key) != value:
+            raise ValueError(f"Unsupported certified baseline configuration: {key}")
+    defaults = {key: configured[key] for key in (
+        "epochs", "batch_size", "context", "horizon", "lr", "hidden_size", "attention_heads",
+        "dropout", "hidden_continuous_size", "lstm_layers", "gradient_clip", "num_workers", "seed",
+        "accumulate_grad_batches", "mode")}
+    defaults["data_dir"] = ROOT / configured["data_dir"]
+    defaults["no_swa"] = not configured["swa"]
+    p.set_defaults(**defaults)
+    return p.parse_args(argv)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CHECKPOINT HELPER
 # ─────────────────────────────────────────────────────────────────────────────
-def find_best_checkpoint(prefix: str = "tft-stage-a-v1") -> Optional[str]:
-    all_ckpts = [
-        c for c in MODEL_DIR.glob(f"{prefix}-*.ckpt")
-        if "last" not in c.name
-    ]
-
-    if not all_ckpts:
-        log.info("  No existing checkpoints found — starting fresh.")
-        return None
-
-    pattern = rf"^{re.escape(prefix)}-epoch=(\d+)-val_loss=(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$"
-    parseable:   list[tuple[float, Path]] = []
-    unparseable: list[Path]               = []
-
-    for path in all_ckpts:
-        match = re.match(pattern, path.stem)
-        if match:
-            try:
-                loss_val = float(match.group(2))
-                if 0.0 < loss_val < 1_000.0:
-                    parseable.append((loss_val, path))
-                    continue
-            except ValueError:
-                pass
-        unparseable.append(path)
-
-    if unparseable:
-        log.warning(
-            f"  {len(unparseable)} checkpoint(s) could not be parsed: "
-            f"{[p.name for p in unparseable]}"
-        )
-
-    if parseable:
-        parseable.sort(key=lambda t: t[0])
-        best_loss, best_path = parseable[0]
-        log.info(f"  Best checkpoint: {best_path.name}  (val_loss={best_loss:.6g})")
-        return str(best_path)
-
-    log.warning("  All checkpoints unparseable. Falling back to newest by mtime.")
-    newest = max(unparseable, key=lambda p: p.stat().st_mtime)
-    return str(newest)
+def find_best_checkpoint(prefix="tft-stage-a-v1", *, registry=None, run_id=None, expected=None):
+    """BEST is an explicit owned artifact; discovery by filename/mtime is disabled."""
+    if registry is None or run_id is None or expected is None:
+        raise ValueError("Automatic filename checkpoint discovery is disabled; specify a registered BEST run")
+    return str(registry.verified(run_id, "best", expected)[0])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1762,6 +1770,15 @@ class GradientNormLogger(pl.Callback):
         self.warmup_steps = warmup_steps
         self._high_grad_consecutive: int = 0
 
+    def state_dict(self):
+        return {"high_grad_consecutive": self._high_grad_consecutive,
+                "clip_val": self.clip_val, "warmup_steps": self.warmup_steps}
+
+    def load_state_dict(self, state):
+        if state.get("clip_val") != self.clip_val or state.get("warmup_steps") != self.warmup_steps:
+            raise ValueError("GradientNormLogger configuration mismatch")
+        self._high_grad_consecutive = int(state["high_grad_consecutive"])
+
     def on_after_backward(
         self,
         trainer:   pl.Trainer,
@@ -1775,10 +1792,11 @@ class GradientNormLogger(pl.Callback):
         if not grad_norms:
             return
 
-        grad_norm = float(torch.stack(grad_norms).norm(2).item())
+        norm_tensor = gradient_norm(pl_module.parameters())
+        grad_norm = float(norm_tensor)
         pl_module.log(
             "train/grad_norm_pre_clip",
-            grad_norm,
+            norm_tensor,
             on_step=True,
             on_epoch=False,
             prog_bar=False,
@@ -1819,31 +1837,28 @@ def build_model(
 ) -> ClinicalTFT:
     loss_fn = ClinicalQuantileLoss(quantiles=QUANTILES)
 
-    if ckpt_path:
-        log.info(f"  Resuming from checkpoint: {ckpt_path}")
-        log.warning(
-            "  [CR-6] Checkpoint resume: CLI hyperparameters are IGNORED. "
-            "Use --no-resume to start fresh with new hyperparameters."
-        )
-        model = ClinicalTFT.load_from_checkpoint(
-            ckpt_path,
-            map_location="cpu",
-            loss=loss_fn,
-        )
+    mode = getattr(args, "mode", "fresh")
+    if ckpt_path and mode == "fresh":
+        raise ValueError("Fresh mode cannot load a checkpoint; select an explicit compatible role")
+    if mode in ("resume-last", "inference-best"):
+        expected = checkpoint_contract(training, args, QUANTILES)
+        registry = registry_for(args, BASELINE_REGISTRY)
+        model, _, _ = load_registered_model(ClinicalTFT, training, args, ckpt_path,
+                                             registry, expected, mode, args.run_id)
     else:
-        log.info("  Building model from scratch...")
         model = ClinicalTFT.from_dataset(
-            training,
-            learning_rate=args.lr,
-            hidden_size=args.hidden_size,
-            attention_head_size=args.attention_heads,
-            dropout=args.dropout,
-            hidden_continuous_size=args.hidden_continuous_size,
-            lstm_layers=args.lstm_layers,
-            loss=loss_fn,
-            log_interval=10,
-            log_val_interval=1,
-        )
+            training, learning_rate=args.lr, hidden_size=args.hidden_size,
+            attention_head_size=args.attention_heads, dropout=args.dropout,
+            hidden_continuous_size=args.hidden_continuous_size, lstm_layers=args.lstm_layers,
+            loss=loss_fn, log_interval=-1, log_val_interval=-1)
+        if mode == "weights-only":
+            expected = checkpoint_contract(training, args, QUANTILES)
+            registry = registry_for(args, BASELINE_REGISTRY)
+            parent_id = getattr(args, "parent_run_id", None)
+            weights, _, record = load_registered_model(ClinicalTFT, training, args, ckpt_path,
+                                                       registry, expected, mode, parent_id)
+            model.load_state_dict(weights, strict=True)
+            model._weights_only_parent = {"run_id": parent_id, "checkpoint_sha256": record["sha256"]}
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log.info(f"  Trainable parameters: {n_params:,}")
@@ -1853,13 +1868,20 @@ def build_model(
 # ─────────────────────────────────────────────────────────────────────────────
 # TRAINING
 # ─────────────────────────────────────────────────────────────────────────────
-def train(
+def train(model, training, validation, args, ckpt_path, *, extra_callbacks=()):
+    """Certified SWA-OFF path; no automatic evaluation or checkpoint discovery."""
+    return train_baseline(model, training, validation, args, ckpt_path,
+                          BASELINE_REGISTRY, GradientNormLogger, extra_callbacks)
+
+
+def train_experimental_legacy(
     model:      ClinicalTFT,
     training:   TimeSeriesDataSet,
     validation: TimeSeriesDataSet,
     args:       argparse.Namespace,
     ckpt_path:  Optional[str],
 ) -> pl.Trainer:
+    """Uncertified historical experimental path; SWA ON remains deferred."""
     if args.num_workers is not None:
         num_workers = args.num_workers
     elif os.name == "nt":
@@ -2606,146 +2628,28 @@ def evaluate(
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
-def main() -> None:
+def main():
+    """Explicit training entry; evaluation remains a separate, later-stage action."""
     args = parse_args()
-
-    if args.horizon < MAX_PREDICTION_LENGTH:
-        raise ValueError(
-            f"--horizon must be at least {MAX_PREDICTION_LENGTH} steps "
-            f"({MAX_PREDICTION_LENGTH * 5} min), because evaluation computes "
-            "t+60 metrics and baselines."
-        )
-    if args.context < 2:
-        raise ValueError("--context must be at least 2 steps.")
-    if args.hidden_size % args.attention_heads != 0:
-        raise ValueError(
-            "--hidden-size must be divisible by --attention-heads "
-            f"(got {args.hidden_size} and {args.attention_heads})."
-        )
-
     pl.seed_everything(args.seed, workers=True)
-
-    log.info("=" * 65)
-    log.info("NMD — TFT Population Model Training (Phase 4 v19 zero-trust fixed)")
-    log.info(f"  pytorch-forecasting : {_ptf.__version__}")
-    log.info(f"  Seed                : {args.seed}")
-    log.info(f"  Horizon             : {args.horizon} steps ({args.horizon * 5} min)")
-    log.info(f"  Context             : {args.context} steps ({args.context * 5} min)")
-    log.info(f"  LR (peak)           : {args.lr}")
-    log.info(f"  Hidden              : {args.hidden_size} (heads: {args.attention_heads})")
-    log.info(f"  LSTM layers         : {args.lstm_layers}")
-    log.info(f"  Dropout             : {args.dropout}")
-    log.info(f"  Gradient clip       : {args.gradient_clip}")
-    log.info(f"  Train/val gap       : {TRAIN_VAL_GAP} steps [LEAK-B]")
-    log.info(
-        f"  ARIMA baseline      : "
-        f"{'enabled' if _STATSMODELS_AVAILABLE else 'disabled (pip install statsmodels)'}"
-    )
-    log.info(
-        f"  Fixes applied       : "
-        f"FIX-NADIR-ASYM (glucose_nadir_proximity + glucose_asymmetry_index sentineled → post-split recompute), "
-        f"FIX-TDD-SENTINEL (tdd_rolling_7d + bolus_fraction_of_tdd parquet sentineled), "
-        f"FIX-NORM-GROUPNORM (EncoderNormalizer → GroupNormalizer, train-fitted and frozen), "
-        f"FIX-ISSUE-19 (glucose_lag_* registered in TIME_VARYING_UNKNOWN_REALS — were orphaned), "
-        f"FIX-ISSUE-18 (hr_recovery_slope warmstart forwarded — resting-HR consistency), "
-        f"FIX-ISSUE-17 (test warm-start from training XML — asymmetric cold-start eliminated), "
-        f"FIX-ISSUE-16 (z-score clip [-10,10] in composite/autonomic_stress_index — numerical bomb fixed), "
-        f"FIX-ISSUE-14 (GradientNormLogger consecutive counter reset — explosion detection restored), "
-        f"FIX-ISSUE-15 (val warm-start: tdd/cbp/ic_ratio/hr_resting cold-start bias eliminated), "
-        f"FIX-ISSUE-11 (autonomic_stress_index sentineled → post-split recompute), "
-        f"FIX-ISSUE-12 (step quantile thresholds → causal rolling quantile), "
-        f"FIX-ISSUE-13 (ARIMA encoder windows: normalised → mg/dL via val_lookup), "
-        f"FIX-ISSUE-4 (bfill removed from hr_resting_causal → causal ffill), "
-        f"FIX-ISSUE-5 (ARIMA index uses parallel arima_batch_indices), "
-        f"FIX-ISSUE-7 (ic_ratio warm-up fill = 0.0 not first_real), "
-        f"+ all v10 fixes: ZT-CRIT-NEW-1/2, AUDIT-HIGH-NEW-1, AUDIT-MED-NEW-1, "
-        f"+ all v9 fixes: LEAK-A/B/C/D/E, AUDIT-CRIT-1/2, AUDIT-HIGH-2/3, "
-        f"AUDIT-MED-2, ZT-CRIT-1/3, ZT-HIGH-3/5, ZT-MED-2/3/4, ZT-INFO-2"
-    )
-    log.info("=" * 65)
-
-    ckpt_path = None if args.no_resume else find_best_checkpoint()
-
-    train_df, val_df    = load_and_preprocess_data(args.data_dir)
-    training_ds, val_ds = build_datasets(train_df, val_df, args)
-    model               = build_model(training_ds, args, ckpt_path)
-    trainer             = train(model, training_ds, val_ds, args, ckpt_path)
-
-    best_ckpt = trainer.checkpoint_callback.best_model_path
-    if best_ckpt:
-        log.info(f"Loading best model for evaluation: {best_ckpt}")
-        model = ClinicalTFT.load_from_checkpoint(
-            best_ckpt,
-            map_location="cpu",
-            loss=ClinicalQuantileLoss(quantiles=QUANTILES),
-        )
-    else:
-        log.warning("No best checkpoint found — evaluating last model state")
-
-    metrics = evaluate(model, val_ds, args, val_df=val_df)
-
-    # ── Out-of-sample test evaluation ─────────────────────────────────────
-    log.info("=" * 65)
-    log.info("Evaluating OUT-OF-SAMPLE on source_split='test'...")
-
-    combined_max_time_idx = max(
-        int(train_df["time_idx"].max()),
-        int(val_df["time_idx"].max()),
-    )
-
-    try:
-        test_df = load_test_data(data_dir=args.data_dir, train_max_time_idx=combined_max_time_idx)
-        test_ds = create_time_series_dataset(
-            test_df,
-            reference_dataset=training_ds,
-            predict_mode=False,
-        )
-        log.info(f"  Test windows: {len(test_ds):,}")
-        test_metrics = evaluate(model, test_ds, args, val_df=test_df)
-        log.info("── Test Metrics (out-of-sample, same patients) ──────────")
-        log.info(f"  MARD t+60 : {test_metrics.get('val_mard_60m_pct', 'N/A')}%")
-        log.info(f"  MARD t+30 : {test_metrics.get('val_mard_30m_pct', 'N/A')}%")
-        log.info(f"  MAE  t+60 : {test_metrics.get('val_mae_60m_mg_dl', 'N/A')} mg/dL")
-        log.info(
-            f"  Zone A+B  : "
-            f"{test_metrics.get('clarke_zone_A_pct', 0) + test_metrics.get('clarke_zone_B_pct', 0):.1f}%"
-        )
-        if not test_metrics.get("persistence_is_approximate", 1.0):
-            log.info(
-                f"  Persistence MARD : {test_metrics.get('persistence_mard_60m_pct', 'N/A')}%"
-            )
-        if "arima_mard_60m_pct" in test_metrics:
-            log.info(
-                f"  ARIMA MARD t+60  : {test_metrics.get('arima_mard_60m_pct', 'N/A')}%"
-            )
-            log.info(
-                f"  vs ARIMA (pp)    : {test_metrics.get('improvement_over_arima_pp', 'N/A')}"
-            )
-    except Exception as e:
-        log.error(f"  Test evaluation failed: {e}")
-    log.info("=" * 65)
-
-    zone_a = metrics.get("clarke_zone_A_pct", 0.0)
-    zone_b = metrics.get("clarke_zone_B_pct", 0.0)
-
-    log.info("=" * 65)
-    log.info("Training complete.")
-    log.info(f"  Best checkpoint  : {best_ckpt or 'N/A'}")
-    log.info(f"  MARD t+60 (val)  : {metrics.get('val_mard_60m_pct', 'N/A')}%")
-    log.info(f"  MARD t+30 (val)  : {metrics.get('val_mard_30m_pct', 'N/A')}%")
-    log.info(f"  MARD t+15 (val)  : {metrics.get('val_mard_15m_pct', 'N/A')}%")
-    log.info(f"  MAE  t+60 (val)  : {metrics.get('val_mae_60m_mg_dl', 'N/A')} mg/dL")
-    log.info(f"  Zone A+B         : {zone_a + zone_b:.1f}%")
-    log.info(f"  Eval scope       : within-subject temporal [ZT-MED-4]")
-    if not metrics.get("persistence_is_approximate", 1.0):
-        log.info(f"  Persistence MARD : {metrics.get('persistence_mard_60m_pct', 'N/A')}%")
-        log.info(f"  n lookups used   : {metrics.get('n_persistence_lookups_used', 'N/A')}")
-    if "arima_mard_60m_pct" in metrics:
-        log.info(f"  ARIMA MARD t+60  : {metrics.get('arima_mard_60m_pct', 'N/A')}%")
-        log.info(
-            f"  vs ARIMA (pp)    : {metrics.get('improvement_over_arima_pp', 'N/A')}"
-        )
-    log.info("=" * 65)
+    parquet = args.data_dir / "training.parquet"
+    args.dataset_sha256 = artifact_sha256(parquet)
+    if args.dataset_sha256 != "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf":
+        raise ValueError("Certified baseline requires the canonical Stage A dataset SHA-256")
+    train_df, val_df = load_and_preprocess_data(args.data_dir)
+    training, validation = build_datasets(train_df, val_df, args)
+    expected = checkpoint_contract(training, args, QUANTILES)
+    registry = registry_for(args, BASELINE_REGISTRY)
+    checkpoint = None
+    if args.mode in ("resume-last", "inference-best"):
+        role = "last" if args.mode == "resume-last" else "best"
+        checkpoint = registry.verified(args.run_id, role, expected)[0]
+    model = build_model(training, args, checkpoint)
+    if args.mode == "inference-best":
+        log.info("Verified BEST loaded; no automatic evaluation performed")
+        return
+    trainer = train(model, training, validation, args, checkpoint)
+    log.info("Training segment complete; owned run_id=%s", trainer.nmd_run_id)
 
 
 if __name__ == "__main__":
