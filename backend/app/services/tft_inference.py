@@ -251,3 +251,123 @@ def predict_from_history(
         "upper_mg_dl": [round(v, 1) for v in upper],
         "horizon_minutes": [i * 5 for i in range(1, HORIZON + 1)],
     }
+
+
+def predict_with_xai(
+    glucose_values,
+    bolus_values=None,
+    basal_values=None,
+    carbs_values=None,
+    subject_id: str = "wiktor",
+):
+    """
+    Like predict_from_history but also returns raw TFT output for XAI.
+    Returns (result_dict, raw_output, model).
+    """
+    import torch
+    model, dataset = get_model()
+
+    # Re-use same preprocessing as predict_from_history
+    n = dataset.max_encoder_length
+    pad = lambda v, default: (  # noqa: E731
+        ([default] * (n - len(v)) + list(v))[-n:]
+        if v else [default] * n
+    )
+
+    glucose = pad(glucose_values, 100.0)
+    bolus = pad(bolus_values or [], 0.0)
+    basal = pad(basal_values or [], 1.0)
+    carbs = pad(carbs_values or [], 0.0)
+
+    import pandas as pd
+    import numpy as np
+
+    times = list(range(n))
+    hour = 12
+    df = pd.DataFrame({
+        "time_idx": times,
+        "subject_id": subject_id,
+        "glucose_mg_dl": glucose,
+        "glucose_delta_1": [0.0] + [glucose[i] - glucose[i-1]
+                                     for i in range(1, n)],
+        "glucose_delta_3": [0.0]*3 + [glucose[i] - glucose[i-3]
+                                       for i in range(3, n)],
+        "bolus_last_1h": bolus,
+        "basal_rate": basal,
+        "carbs_last_1h": carbs,
+        "hour_sin": [np.sin(2 * np.pi * hour / 24)] * n,
+        "hour_cos": [np.cos(2 * np.pi * hour / 24)] * n,
+        "dow_sin": [0.0] * n,
+        "dow_cos": [1.0] * n,
+    })
+
+    from pytorch_forecasting import TimeSeriesDataSet
+    pred_dataset = TimeSeriesDataSet.from_dataset(
+        dataset, df, predict=True, stop_randomization=True)
+    loader = pred_dataset.to_dataloader(
+        train=False, batch_size=1, num_workers=0)
+
+    with torch.no_grad():
+        raw_preds = model.predict(loader, mode="raw", return_x=True)
+
+    return raw_preds, model
+
+
+def predict_with_xai(
+    glucose_values,
+    bolus_values=None,
+    basal_values=None,
+    carbs_values=None,
+    subject_id: str = "wiktor",
+):
+    """
+    Like predict_from_history but also returns raw TFT output for XAI.
+    Returns (result_dict, raw_output, model).
+    """
+    import torch
+    model, dataset = get_model()
+
+    # Re-use same preprocessing as predict_from_history
+    n = dataset.max_encoder_length
+    pad = lambda v, default: (  # noqa: E731
+        ([default] * (n - len(v)) + list(v))[-n:]
+        if v else [default] * n
+    )
+
+    glucose = pad(glucose_values, 100.0)
+    bolus = pad(bolus_values or [], 0.0)
+    basal = pad(basal_values or [], 1.0)
+    carbs = pad(carbs_values or [], 0.0)
+
+    import pandas as pd
+    import numpy as np
+
+    times = list(range(n))
+    hour = 12
+    df = pd.DataFrame({
+        "time_idx": times,
+        "subject_id": subject_id,
+        "glucose_mg_dl": glucose,
+        "glucose_delta_1": [0.0] + [glucose[i] - glucose[i-1]
+                                     for i in range(1, n)],
+        "glucose_delta_3": [0.0]*3 + [glucose[i] - glucose[i-3]
+                                       for i in range(3, n)],
+        "bolus_last_1h": bolus,
+        "basal_rate": basal,
+        "carbs_last_1h": carbs,
+        "hour_sin": [np.sin(2 * np.pi * hour / 24)] * n,
+        "hour_cos": [np.cos(2 * np.pi * hour / 24)] * n,
+        "dow_sin": [0.0] * n,
+        "dow_cos": [1.0] * n,
+    })
+
+    from pytorch_forecasting import TimeSeriesDataSet
+    pred_dataset = TimeSeriesDataSet.from_dataset(
+        dataset, df, predict=True, stop_randomization=True)
+    loader = pred_dataset.to_dataloader(
+        train=False, batch_size=1, num_workers=0)
+
+    with torch.no_grad():
+        raw_preds = model.predict(loader, mode="raw", return_x=True)
+
+    return raw_preds, model

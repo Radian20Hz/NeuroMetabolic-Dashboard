@@ -40,3 +40,11 @@ frontend/.env.production
 backend/.env
 ml/data/processed/*.parquet
 ml/data/*.csv
+
+# Local Python environment
+.venv/
+
+# Local training artifacts
+/checkpoints/
+/ml/logs/
+/training.log

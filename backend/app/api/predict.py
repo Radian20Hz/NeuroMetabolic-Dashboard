@@ -117,3 +117,46 @@ async def predict_glucose(request: PredictRequest) -> PredictResponse:
         predictions=predictions,
         last_known_glucose=request.glucose_mg_dl[-1],
     )
+
+
+class ExplainResponse(BaseModel):
+    subject_id: str
+    variable_importance: list[dict]
+    attention_weights: list[dict]
+
+
+@router.post("/explain", response_model=ExplainResponse)
+async def explain_prediction(request: PredictRequest) -> ExplainResponse:
+    """
+    Return TFT attention weights and variable importance for a prediction.
+    Provides XAI explainability for the glucose forecast.
+    """
+    try:
+        from app.services.tft_inference import predict_with_xai
+        from app.services.xai_service import extract_xai
+        from app.services.subject_matcher import match_subject_from_readings
+
+        subject_id = request.subject_id
+        if subject_id is None:
+            subject_id, _ = match_subject_from_readings(
+                list(request.glucose_mg_dl))
+
+        raw_output, model = predict_with_xai(
+            glucose_values=request.glucose_mg_dl,
+            bolus_values=request.bolus_last_1h,
+            basal_values=request.basal_rate,
+            carbs_values=request.carbs_last_1h,
+            subject_id=subject_id,
+        )
+        xai = extract_xai(raw_output, model)
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=f"Model not available: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"XAI error: {e}")
+
+    return ExplainResponse(
+        subject_id=subject_id,
+        variable_importance=xai["variable_importance"],
+        attention_weights=xai["attention_weights"],
+    )
