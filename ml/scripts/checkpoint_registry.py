@@ -28,7 +28,7 @@ try:
 except ImportError:
     from numerical_profile import profile as numerical_profile
 
-PROTOCOL = "nmd-baseline-v1.0-stage-b-2"
+PROTOCOL = "nmd-baseline-v1.0-stage-c-1"
 CANONICAL_STAGE_A_SHA256 = "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf"
 
 
@@ -75,6 +75,8 @@ def digest(value):
 
 
 def contract(dataset, args, quantiles):
+    if getattr(dataset.target_normalizer, "nmd_revision", None) != "observed-train-encoded-subject-v2":
+        raise ValueError("Checkpoint compatibility: historical normalizer semantics")
     data_hash = getattr(args, "dataset_sha256", None)
     if not isinstance(data_hash,str) or len(data_hash) != 64 or any(c not in "0123456789abcdef" for c in data_hash):
         raise ValueError("Verified dataset_sha256 is required for baseline training")
@@ -108,7 +110,7 @@ def contract(dataset, args, quantiles):
         synthetic_audit=getattr(args,"synthetic_audit",False),ordered_reals=dataset.reals, ordered_categoricals=dataset.flat_categoricals,
         tensor_dtypes={k:str(v.dtype) for k,v in dataset.data.items() if isinstance(v,torch.Tensor)},
         units={"target":"mg/dL", "time_idx":"5 minutes", "other_features":"unchanged Stage A feature definitions"},
-        normalizer=semantic(dataset.target_normalizer), lengths=semantic({k:parameters[k] for k in length_keys}),
+        normalizer_revision="observed-train-encoded-subject-v2", normalizer=semantic(dataset.target_normalizer), lengths=semantic({k:parameters[k] for k in length_keys}),
         context=args.context, horizon=args.horizon, quantiles=list(quantiles), architecture=architecture,
         loss=dict(name="ClinicalQuantileLoss", factor=2, hypo_threshold=70., hypo_weight=2.5, reduction="valid_positions_mean"),
         optimizer=dict(name="AdamW", lr=args.lr, eps=1e-7, weight_decay=.01),

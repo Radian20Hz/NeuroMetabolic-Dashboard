@@ -1,0 +1,120 @@
+{
+  "head": "58c2e36dc108ef3d88de888a3fffc18c63af05bb",
+  "branch": "research/baseline-audit",
+  "git_dirty": true,
+  "campaign": {
+    "config_sha256": "d7bbeb33631687f2e80256393456b3b98748666911b90fc89288ac9ca5c59a23",
+    "forward_batch_calls": 20,
+    "selected_window_keys": [
+      "synthetic_A:48",
+      "synthetic_A:49",
+      "synthetic_A:50",
+      "synthetic_A:51",
+      "synthetic_A:52",
+      "synthetic_A:53",
+      "synthetic_B:48",
+      "synthetic_B:49",
+      "synthetic_B:50",
+      "synthetic_B:51",
+      "synthetic_B:52",
+      "synthetic_B:53"
+    ],
+    "backward": 0,
+    "optimizer_steps": 0,
+    "runs": [
+      {
+        "run": "run01",
+        "status": "EXITED",
+        "start": 1789411128.3239117,
+        "exit_code": 1,
+        "seconds": 7.225325345993042,
+        "command": [
+          "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+          "/home/radian/NeuroMetabolic Dashboard/ml/tests/test_stage_c_remediation.py",
+          "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_remediation_20260914/run01"
+        ]
+      },
+      {
+        "run": "run02",
+        "status": "EXITED",
+        "start": 1789411375.32088,
+        "exit_code": 0,
+        "seconds": 8.1767258644104,
+        "command": [
+          "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+          "/home/radian/NeuroMetabolic Dashboard/ml/tests/test_stage_c_remediation.py",
+          "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_remediation_20260914/run02"
+        ]
+      }
+    ]
+  },
+  "last_result": {
+    "PASS": 19,
+    "FAIL": 0,
+    "ERROR": 0,
+    "SKIP": 0,
+    "XFAIL": 0
+  },
+  "source_hashes": {
+    "ml/scripts/evaluation_stage_c.py": "971ef31ae41b568f61c9583ae086b63fb09b98843786e6dd1f8a8cde3d725545",
+    "ml/scripts/train_tft_population_v2.py": "dcdb6c738d70958a4a105d81c965f4dd17af0db35143ba77d98ba5b639f24572",
+    "ml/scripts/checkpoint_registry.py": "cb3b9ca3495faa06ee039c28c2085fb3a9ee1c246f9cdeba766d11707d25df3d",
+    "ml/tests/test_stage_c_remediation.py": "4d4cbed9db0b6299c1d1b1c08f6541240a1c1c7a91ca63c98fa477c87396ab23",
+    "ml/tests/run_stage_c_remediation.py": "58d4dafa9ad84b40cb9e959d5daf958762fd9a17fc8100304f33a42d9a33eae0",
+    "configs/baseline_v1_stage_c.json": "a85bb26214253a855af066b590565b3b8b45beebb34302e686cc36bc752e1f35"
+  },
+  "environment": {
+    "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+    "torch": "2.11.0+cu130",
+    "lightning": "2.6.1",
+    "pytorch_forecasting": "1.7.0",
+    "numpy": "2.4.4",
+    "pandas": "2.3.3",
+    "numerics": {
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    },
+    "candidate_index_rows": 108
+  },
+  "integration": {
+    "source_sha256": "8af9b6d996f8fbcbac4b5daced18d621e17b9859e00b4092f3583d05a2146683",
+    "ordered_keys_sha256": "b62692d81096cdccb3f4c34f83a45ad2956c5885e55fec63f9010cf2561ea093",
+    "model_file_sha256": "20dd0c455981933334a359ccb935550c601a8cd60df240c5a336a62d78af114c",
+    "model_state_sha256": "393be948772609de69af7212aa14397e82bbfca1d1a11c72f5053b264adaeaf2",
+    "normalizer_sha256": "b67a22ddc284ef6a0dbff26286b0ab8e460aaf190b3de52aa3c1cbf0956aed40",
+    "artifact_sha256": {
+      "metrics.json": "b768a4a5591562758763a1e96b5dfbfecbc565486978e2eca7cc7c14412ef7e4",
+      "raw.json": "131d74616321dd5c8509e3f2763f5ad84fac9158497e70bd0872a49ba5d8bc21"
+    },
+    "denominators": {
+      "occurrences": 144,
+      "subjects": 2,
+      "unique_subject_target_timestamps": 34,
+      "windows": 12
+    },
+    "flow": {
+      "candidate_index_rows": 108,
+      "eligible_windows": 12,
+      "excluded": {
+        "encoder": 0,
+        "length": 96,
+        "unobserved_decoder": 0
+      }
+    }
+  },
+  "clinical_loss_AST_unchanged": true,
+  "historical_baseline_config_unchanged": true,
+  "training_regression": "NOT RUN; optimizer forbidden",
+  "trained_BEST_integration": "NOT RUN; owned synthetic/untrained roundtrip only",
+  "audit_history_unchanged": true
+}

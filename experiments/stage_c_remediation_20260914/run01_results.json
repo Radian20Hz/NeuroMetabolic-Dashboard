@@ -1,0 +1,147 @@
+[
+  {
+    "id": "C00_guards",
+    "status": "PASS",
+    "evidence": [
+      "forbidden data/model open",
+      "forbidden data/model open",
+      "forbidden data/model open",
+      "main",
+      "load_test_data",
+      "Trainer.fit",
+      "Tensor.backward",
+      "AdamW.step"
+    ],
+    "seconds": 0.0041992599999503
+  },
+  {
+    "id": "C01_C03_C18_real_PF_evaluate_readback",
+    "status": "PASS",
+    "evidence": {
+      "flow": {
+        "candidate_index_rows": 108,
+        "eligible_windows": 12,
+        "excluded": {
+          "length": 96,
+          "unobserved_decoder": 0,
+          "encoder": 0
+        }
+      },
+      "denominators": {
+        "occurrences": 144,
+        "windows": 12,
+        "unique_subject_target_timestamps": 34,
+        "subjects": 2
+      }
+    },
+    "seconds": 0.44867709899881447
+  },
+  {
+    "id": "C02_normalizer_real_batch_sentinels_roundtrip",
+    "status": "FAIL",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/tests/test_stage_c_remediation.py\", line 183, in normalizer\n    try: production.create_time_series_dataset(unseen, reference_dataset=training)\n         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py\", line 1663, in create_time_series_dataset\n    validate_dense_frame(df)\n    ~~~~~~~~~~~~~~~~~~~~^^^^\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/scripts/observed_windows.py\", line 20, in validate_dense_frame\n    raise ValueError(\"Dataset requires complete five-minute timeline; no synthetic timesteps\")\nValueError: Dataset requires complete five-minute timeline; no synthetic timesteps\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/tests/test_stage_c_remediation.py\", line 80, in test\n    evidence = fn(); row = dict(id=name, status='PASS', evidence=evidence)\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/tests/test_stage_c_remediation.py\", line 184, in normalizer\n    except ValueError as ex: assert 'unseen' in str(ex)\n                                    ^^^^^^^^^^^^^^^^^^^\nAssertionError\n",
+    "seconds": 0.32907732800049416
+  },
+  {
+    "id": "C01_keys_y_lengths_coherent_permutation",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.004907960999844363
+  },
+  {
+    "id": "C03_source_roles_missingness_full48",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.03298458500103152
+  },
+  {
+    "id": "C03_all_q_finite_domain",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.0018617770001583267
+  },
+  {
+    "id": "C03_C04_scalar_full_precision",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.0015240129996527685
+  },
+  {
+    "id": "C08_complete_persistence_lineage",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.3080938879993482
+  },
+  {
+    "id": "C10_C11_C12_quantiles_intervals_crossing",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.000950921999901766
+  },
+  {
+    "id": "C05_C06_C07_all_panels_macro_overlap_ranges",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.1816457969998737
+  },
+  {
+    "id": "C18_context_preload_state_output_tamper",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.11900476799928583
+  },
+  {
+    "id": "C03_C08_invalid_publication_planned_N",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.10648406200016325
+  },
+  {
+    "id": "C01_real_uneven_reversed_batches",
+    "status": "PASS",
+    "evidence": {
+      "max_abs": 0.0001068115234375,
+      "batches": 3
+    },
+    "seconds": 0.12629248399935022
+  },
+  {
+    "id": "C03_native_model_finite_gate",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.13983448399994813
+  },
+  {
+    "id": "C03_real_PF_late_fault",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.17615390399987518
+  },
+  {
+    "id": "C14_C17_raw_language_empty_Clarke",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.3594416199994157
+  },
+  {
+    "id": "C13_C14_loss_algebra_CQR_definition_only",
+    "status": "PASS",
+    "evidence": {
+      "C13-F01": "ACCEPTED LIMITATION",
+      "C14-F01": "NOT IMPLEMENTED/DEFERRED",
+      "calibration_fit": "NOT IMPLEMENTED"
+    },
+    "seconds": 0.005805060000056983
+  },
+  {
+    "id": "C19_state_no_updates",
+    "status": "PASS",
+    "evidence": {
+      "state_sha256": "393be948772609de69af7212aa14397e82bbfca1d1a11c72f5053b264adaeaf2",
+      "state_unchanged": true,
+      "backward": 0,
+      "optimizer_steps": 0
+    },
+    "seconds": 0.01008591699974204
+  }
+]

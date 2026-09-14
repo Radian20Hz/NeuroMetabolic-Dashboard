@@ -1029,14 +1029,16 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--accumulate-grad-batches", type=int, default=1)
     p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--seed",      type=int,   default=42)
-    p.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1.json")
+    p.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1_stage_c.json")
     selector = argparse.ArgumentParser(add_help=False)
-    selector.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1.json")
+    selector.add_argument("--config", type=Path, default=ROOT / "configs" / "baseline_v1_stage_c.json")
     selected, _ = selector.parse_known_args(argv)
     import json
     configured = json.loads(selected.config.read_text())
     required = {
-        "protocol": "nmd-baseline-v1.0-stage-b-2",
+        "protocol": "nmd-baseline-v1.0-stage-c-1",
+        "normalizer_revision": "observed-train-encoded-subject-v2",
+        "evaluation_revision": "nmd-evaluation-stage-c-1",
         "data_protocol": "baseline_v1_stage_a",
         "canonical_stage_a_sha256": "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf",
         "precision": "32-true", "swa": False, "mid_epoch_resume": False,
@@ -1669,6 +1671,11 @@ def create_time_series_dataset(
         if col != TARGET_COL:
             prepared[col] = prepared[col].replace([np.inf, -np.inf], np.nan).fillna(0.)
     if reference_dataset is not None:
+        norm = reference_dataset.target_normalizer
+        if getattr(norm, "nmd_revision", None) != "observed-train-encoded-subject-v2":
+            raise ValueError("Normalizer compatibility: historical semantics cannot be migrated")
+        if not set(df[GROUP_COL]).issubset(norm.nmd_subject_mapping):
+            raise ValueError("Normalizer compatibility: unseen subject")
         dataset = TimeSeriesDataSet.from_dataset(
             reference_dataset, prepared, predict=predict_mode,
             stop_randomization=True, min_prediction_length=horizon,
@@ -1676,8 +1683,18 @@ def create_time_series_dataset(
     else:
         # Storage placeholders must never enter fitted target statistics.
         observed = df[TARGET_OBSERVED].astype(bool)
+        if set(df.loc[observed, GROUP_COL]) != set(df[GROUP_COL]):
+            raise ValueError("Normalizer requires observed training targets for every subject")
         normalizer = GroupNormalizer(groups=[GROUP_COL], transformation="log", center=True)
-        normalizer.fit(df.loc[observed, TARGET_COL], df.loc[observed])
+        # C02: PF encodes group categories before target normalization. Use
+        # exactly the same fitted mapping for statistics and both PF encoders.
+        from pytorch_forecasting.data.encoders import NaNLabelEncoder
+        subject_encoder = NaNLabelEncoder().fit(df[GROUP_COL])
+        encoded_fit = df.loc[observed].copy()
+        encoded_fit[GROUP_COL] = subject_encoder.transform(encoded_fit[GROUP_COL])
+        normalizer.fit(df.loc[observed, TARGET_COL], encoded_fit)
+        normalizer.nmd_revision = "observed-train-encoded-subject-v2"
+        normalizer.nmd_subject_mapping = dict(subject_encoder.classes_)
         dataset = TimeSeriesDataSet(
             prepared, time_idx="time_idx", target=TARGET_COL, group_ids=[GROUP_COL],
             min_encoder_length=context_length // 2, max_encoder_length=context_length,
@@ -1685,6 +1702,8 @@ def create_time_series_dataset(
             static_categoricals=STATIC_CATEGORICALS, static_reals=STATIC_REALS,
             time_varying_known_reals=TIME_VARYING_KNOWN_REALS,
             time_varying_unknown_reals=unknown, target_normalizer=normalizer,
+            categorical_encoders={GROUP_COL: subject_encoder,
+                                  "__group_id__" + GROUP_COL: subject_encoder},
             add_relative_time_idx=True, add_target_scales=True,
             add_encoder_length=True, allow_missing_timesteps=False)
     dataset = filter_observed_windows(dataset, df)
@@ -1743,7 +1762,7 @@ def build_datasets(
 
     try:
         _norm_values = np.asarray(
-            _val_norm.get_norm(val_df[[GROUP_COL]].copy()), dtype=float
+            _val_norm.get_norm(val_df[[GROUP_COL]].assign(**{GROUP_COL: val_df[GROUP_COL].map(_val_norm.nmd_subject_mapping)})), dtype=float
         )
         if not np.isfinite(_norm_values).all():
             raise RuntimeError(
@@ -2064,25 +2083,14 @@ def _verify_time_idx_alignment(
     val_df:          pd.DataFrame,
     dec_time_idx:    np.ndarray,
     subject_ids:     np.ndarray,
-    coverage_thresh: float = 0.90,
+    coverage_thresh: float = 1.0,
 ) -> None:
-    val_lookup_keys = set(
-        zip(val_df[SUBJECT_COL].astype(str), val_df["time_idx"].astype(int))
-    )
-    last_enc_ti  = dec_time_idx[:, 0] - 1
-    lookup_keys  = list(zip(subject_ids.astype(str), last_enc_ti.astype(int)))
-    n_found      = sum(1 for k in lookup_keys if k in val_lookup_keys)
-    coverage     = n_found / max(len(lookup_keys), 1)
-
-    log.info(
-        f"  [AUDIT-MED-2] Persistence lookup alignment: "
-        f"{n_found}/{len(lookup_keys)} keys found ({coverage:.1%})"
-    )
-    if coverage < coverage_thresh:
-        raise RuntimeError(
-            f"[AUDIT-MED-2] Persistence baseline alignment failure: "
-            f"only {coverage:.1%} of decoder_time_idx - 1 keys found in val_df."
-        )
+    if coverage_thresh != 1.0:
+        raise ValueError("Partial persistence coverage is not supported")
+    lookup = set(zip(val_df[SUBJECT_COL].astype(str), val_df["time_idx"].astype(int)))
+    keys = [(str(s), int(t)-1) for s, t in zip(subject_ids, dec_time_idx[:, 0])]
+    if len(keys) != len(dec_time_idx) or any(key not in lookup for key in keys):
+        raise ValueError("Persistence alignment requires every source lookup")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2114,520 +2122,18 @@ def _compute_arima_baseline(
 # ─────────────────────────────────────────────────────────────────────────────
 # EVALUATE
 # ─────────────────────────────────────────────────────────────────────────────
-def evaluate(
-    model:      "ClinicalTFT",
-    validation: TimeSeriesDataSet,
-    args,
-    val_df:     pd.DataFrame,
-) -> dict[str, float]:
+def evaluate(model, validation, args, val_df, *, context=None, output_dir=None):
+    """C-core reporting: explicit provenance, full evaluation W, raw mg/dL.
+
+    Training/early-stopping datasets retain their Stage A indices. This entry
+    qualifies a separate evaluation copy and never fits a model or calibrator.
     """
-    Evaluate model on a validation/test TimeSeriesDataSet.
-
-    [LEAK-E] Persistence baseline — miss → exclude, not substitute.
-    [AUDIT-MED-NEW-1] ARIMA(1,1,0) baseline added alongside flat persistence.
-    """
-    assert_observed_evaluation(validation, val_df)
-    log.info("Evaluating on validation set...")
-    log.info(
-        "  [ZT-MED-4] NOTE: metrics are WITHIN-SUBJECT TEMPORAL validation. "
-        "They do NOT measure subject-agnostic generalisation."
-    )
-
-    val_loader = validation.to_dataloader(
-        train=False,
-        batch_size=args.batch_size * 2,
-        num_workers=0,
-        shuffle=False,
-    )
-
-    eval_accelerator = (
-        "cpu" if (args.no_gpu or not torch.cuda.is_available()) else "gpu"
-    )
-
-    predictions = model.predict(
-        val_loader,
-        return_y=True,
-        return_x=True,  # required by persistence/ARIMA reconstruction below
-        mode="quantiles",
-        trainer_kwargs={"accelerator": eval_accelerator, "logger": False},
-    )
-
-    # PyTorch Forecasting returns y as (unscaled_target, sample_weight).  The
-    # second element is NOT target_scale.  Quantile predictions returned by
-    # model.predict(mode="quantiles") are already transformed back to target
-    # space by BaseModel.transform_output().
-    y_tuple = predictions.y
-    if isinstance(y_tuple, (tuple, list)):
-        y_true        = y_tuple[0]
-        sample_weight = y_tuple[1] if len(y_tuple) >= 2 else None
+    if __package__ in (None, ""):
+        from evaluation_stage_c import evaluate as evaluate_stage_c
     else:
-        y_true        = y_tuple
-        sample_weight = None
-
-    if isinstance(y_true, (tuple, list)):
-        y_true = y_true[0]
-
-    log.info(
-        f"  predictions.y: y_true.shape={tuple(y_true.shape)}, "
-        f"sample_weight={'None' if sample_weight is None else tuple(sample_weight.shape)}"
-    )
-
-    raw_output = predictions.output
-    if isinstance(raw_output, torch.Tensor):
-        output = raw_output
-    elif hasattr(raw_output, "prediction"):
-        output = raw_output.prediction
-    else:
-        for field in raw_output._fields:
-            candidate = getattr(raw_output, field)
-            if isinstance(candidate, torch.Tensor) and candidate.dim() == 3:
-                output = candidate
-                break
-        else:
-            raise ValueError(
-                f"Cannot find 3-D output tensor in predictions.output. "
-                f"Fields: {raw_output._fields}"
-            )
-
-    output = output.cpu()
-    y_true = y_true.cpu()
-
-    assert output.shape[0] == y_true.shape[0]
-
-    # [AUDIT-EVAL-1] No manual inverse transform here.  `mode="quantiles"`
-    # returns de-normalized predictions, and TimeSeriesDataSet returns the
-    # unscaled continuous target in y.  The previous heuristic could double-
-    # transform very poor predictions simply because output_max < 20 mg/dL.
-    output_mgdl = output
-    y_true_mgdl = y_true
-    it_strategy = "native_real_space"
-
-    if not torch.isfinite(output_mgdl).all():
-        n_bad = int((~torch.isfinite(output_mgdl)).sum().item())
-        log.warning(f"  Replacing {n_bad} non-finite values in output_mgdl")
-        output_mgdl = torch.nan_to_num(output_mgdl, nan=0.0, posinf=400.0, neginf=40.0)
-
-    if not torch.isfinite(y_true_mgdl).all():
-        log.warning(
-            "  y_true contains non-finite values; affected entries will be "
-            "excluded by the metric masks."
-        )
-
-    log.info("  Evaluation tensors are already in native mg/dL target space ✓")
-
-    try:
-        median_idx = QUANTILES.index(0.5)
-    except ValueError as exc:
-        raise ValueError(f"0.5 not found in QUANTILES={QUANTILES}.") from exc
-
-    y_pred_mgdl = (
-        output_mgdl[:, :, median_idx] if output_mgdl.dim() == 3 else output_mgdl
-    )
-    y_pred_mgdl = torch.nan_to_num(y_pred_mgdl, nan=0.0, posinf=400.0, neginf=40.0)
-
-    # ── Multi-horizon metrics ─────────────────────────────────────────────
-    horizon_steps = {
-        5:  0,
-        15: 2,
-        30: 5,
-        45: 8,
-        60: MAX_PREDICTION_LENGTH - 1,
-    }
-
-    metrics: dict[str, float] = {
-        "eval_scope":           0.0,
-        "inverse_transform_ok": 1.0,
-    }
-
-    log.info("  ── Validation Metrics by Horizon (mg/dL) ─────────────────")
-    for horizon_min, step_idx in horizon_steps.items():
-        y_pred_h = y_pred_mgdl[:, step_idx]
-        y_true_h = y_true_mgdl[:, step_idx]
-
-        valid_mask = (
-            ~torch.isnan(y_true_h)
-            & ~torch.isnan(y_pred_h)
-            & torch.isfinite(y_pred_h)
-            & torch.isfinite(y_true_h)
-            & (y_true_h > 20.0)
-            & (y_true_h < 400.0)
-            & (y_pred_h > 0.0)
-        )
-
-        y_pred_v = y_pred_h[valid_mask]
-        y_true_v = y_true_h[valid_mask]
-
-        if len(y_pred_v) == 0:
-            log.warning(f"  t+{horizon_min}: no valid samples after filtering.")
-            continue
-
-        mae  = (y_pred_v - y_true_v).abs().mean().item()
-        rmse = torch.sqrt(((y_pred_v - y_true_v) ** 2).mean()).item()
-        mard = (
-            (y_pred_v - y_true_v).abs()
-            / y_true_v.abs().clamp(min=1.0)
-        ).mean().item() * 100.0
-
-        metrics[f"val_mae_{horizon_min}m_mg_dl"]  = round(mae,  4)
-        metrics[f"val_rmse_{horizon_min}m_mg_dl"] = round(rmse, 4)
-        metrics[f"val_mard_{horizon_min}m_pct"]   = round(mard, 4)
-
-        flag = "✓" if mard < 10.0 else ("~" if mard < 15.0 else "✗")
-        log.info(
-            f"    t+{horizon_min:2d} min | MAE={mae:6.2f} | "
-            f"RMSE={rmse:6.2f} | MARD={mard:5.2f}%  {flag}"
-        )
-
-    step_60  = horizon_steps[60]
-    valid_60 = (
-        ~torch.isnan(y_true_mgdl[:, step_60])
-        & ~torch.isnan(y_pred_mgdl[:, step_60])
-        & torch.isfinite(y_pred_mgdl[:, step_60])
-        & torch.isfinite(y_true_mgdl[:, step_60])
-        & (y_true_mgdl[:, step_60] > 20.0)
-        & (y_true_mgdl[:, step_60] < 400.0)
-        & (y_pred_mgdl[:, step_60] > 0.0)
-    )
-    y_pred_v60 = y_pred_mgdl[:, step_60][valid_60]
-    y_true_v60 = y_true_mgdl[:, step_60][valid_60]
-    n_valid    = int(valid_60.sum().item())
-
-    if len(y_pred_v60) > 0:
-        mard_60 = metrics.get("val_mard_60m_pct", 0.0)
-        if mard_60 < 10.0:
-            log.info("    ✓ t+60 MARD < 10% — clinical accuracy target MET")
-        elif mard_60 < 15.0:
-            log.warning(f"    ~ t+60 MARD {mard_60:.1f}% — approaching 15% target")
-        else:
-            log.warning(f"    ✗ t+60 MARD {mard_60:.1f}% — above 10% target")
-
-        metrics["n_valid_samples"] = float(n_valid)
-
-        quantile_coverage: dict[str, float] = {}
-        if output_mgdl.dim() == 3:
-            for i, q_val in enumerate(QUANTILES):
-                q_pred   = output_mgdl[:, step_60, i][valid_60]
-                coverage = (y_true_v60 <= q_pred).float().mean().item()
-                quantile_coverage[f"coverage_q{int(q_val * 100):02d}"] = round(coverage, 4)
-        metrics.update(quantile_coverage)
-
-        ceg = clarke_error_grid(y_true_v60, y_pred_v60)
-        log.info("  ── Clarke Error Grid (t+60 min, geometric) ────────────────")
-        for zone, pct in ceg.items():
-            flag = "✓" if zone in ("A", "B") else ("⚠" if zone == "C" else "✗")
-            log.info(f"    Zone {zone}: {pct:5.1f}%  {flag}")
-        ab_pct = ceg["A"] + ceg["B"]
-        if ab_pct >= 99.0:
-            log.info(f"  ✓ Zone A+B = {ab_pct:.1f}% — clinically SAFE (≥99%)")
-        elif ab_pct >= 95.0:
-            log.warning(f"  ~ Zone A+B = {ab_pct:.1f}% — acceptable but below 99%")
-        else:
-            log.warning(f"  ✗ Zone A+B = {ab_pct:.1f}% — {100.0 - ab_pct:.1f}% in C/D/E")
-        metrics.update({f"clarke_zone_{z}_pct": v for z, v in ceg.items()})
-
-        if quantile_coverage:
-            log.info("  ── Quantile Calibration ──────────────────────────────────")
-            for q_name, coverage in quantile_coverage.items():
-                q_val = float(q_name.split("q")[1]) / 100.0
-                delta = abs(coverage - q_val)
-                flag  = "✓" if delta < 0.05 else "⚠"
-                log.info(
-                    f"    Q{q_val:.2f}: expected={q_val:.3f}  "
-                    f"observed={coverage:.3f}  (Δ={delta:.3f}) {flag}"
-                )
-
-    # ── [LEAK-E] Persistence + [AUDIT-MED-NEW-1] ARIMA baselines ─────────
-    log.info("  ── Persistence & ARIMA Baselines (t+60) ───────────────────")
-    persistence_approximate = False
-    last_encoder_glucose     = None
-    persistence_sample_mask  = None
-    encoder_windows: dict[int, np.ndarray] = {}  # sample_idx → encoder glucose array
-
-    try:
-        dec_time_idx = predictions.x.get("decoder_time_idx", None)
-
-        if dec_time_idx is not None:
-            # Use the public TimeSeriesDataSet API to decode the sample index.
-            # Manual decoding of x["groups"] through categorical_encoders is brittle:
-            # PyTorch Forecasting internally stores group IDs under synthetic
-            # __group_id__* encoders and those internals have changed across releases.
-            # x_to_index() returns the original group labels plus the first decoder
-            # time_idx in exactly the same sample order as predictions.x.
-            sample_index = validation.x_to_index(predictions.x)
-            if SUBJECT_COL not in sample_index.columns or "time_idx" not in sample_index.columns:
-                raise RuntimeError(
-                    "[AUDIT] TimeSeriesDataSet.x_to_index() did not return the expected "
-                    f"columns ({SUBJECT_COL!r}, 'time_idx'). Got: {list(sample_index.columns)}"
-                )
-            if len(sample_index) != len(dec_time_idx):
-                raise RuntimeError(
-                    "[AUDIT] Prediction/index length mismatch: "
-                    f"x_to_index={len(sample_index)} vs decoder_time_idx={len(dec_time_idx)}."
-                )
-
-            subject_ids = sample_index[SUBJECT_COL].astype(str).to_numpy()
-            first_dec   = sample_index["time_idx"].astype(int).to_numpy()
-            last_enc_ti = first_dec - 1
-
-            # Cross-check the public decoded index against the tensor returned by
-            # the dataloader. A mismatch would make persistence/ARIMA comparisons
-            # invalid, so fail loudly rather than silently score the wrong rows.
-            first_dec_tensor = dec_time_idx[:, 0].detach().cpu().numpy().astype(int)
-            if not np.array_equal(first_dec, first_dec_tensor):
-                raise RuntimeError(
-                    "[AUDIT] x_to_index time_idx does not match decoder_time_idx[:, 0]. "
-                    "Refusing to compute persistence/ARIMA baselines."
-                )
-
-            _verify_time_idx_alignment(
-                val_df,
-                dec_time_idx.cpu().numpy(),
-                subject_ids,
-            )
-
-            val_lookup = (
-                val_df.set_index([SUBJECT_COL, "time_idx"])["glucose_mg_dl"]
-            )
-
-            # [FIX-ISSUE-13] Build ARIMA encoder windows in raw mg/dL using val_lookup.
-            # The previous approach extracted encoder_cont[:, :, target_feat_idx], which
-            # is the log-robust NORMALISED representation of glucose. ARIMA forecast
-            # values therefore lived in normalised space (~[-2, 2]) while y_true_mgdl
-            # was in mg/dL (~70-400), making arima_mard meaningless and
-            # improvement_over_arima_pp inflated by orders of magnitude.
-            #
-            # Fix: for each sample, recover the actual encoder time indices from
-            # dec_time_idx and encoder_lengths, then look up glucose_mg_dl from
-            # val_lookup (subject_id, time_idx) → mg/dL.  encoder_lengths tells us
-            # the true (non-padded) window length, so we never feed leading-zero
-            # padding artefacts into the ARIMA model.
-            #
-            # Samples with > 30% NaN coverage in their mg/dL window are excluded
-            # (ARIMA is unreliable on heavily gapped series); forward-fill handles
-            # short gaps up to 15 min before handing the array to ARIMA.
-            encoder_lengths_raw = predictions.x.get("encoder_lengths", None)
-            if encoder_lengths_raw is not None and dec_time_idx is not None:
-                enc_lens_np = encoder_lengths_raw.cpu().numpy().astype(int)
-                for i in range(len(subject_ids)):
-                    sid      = str(subject_ids[i])
-                    last_ti  = int(last_enc_ti[i])
-                    enc_len  = int(enc_lens_np[i])
-                    start_ti = last_ti - enc_len + 1
-                    window   = np.array([
-                        float(val_lookup[(sid, int(ti))])
-                        if (sid, int(ti)) in val_lookup.index
-                        else np.nan
-                        for ti in range(start_ti, last_ti + 1)
-                    ], dtype=float)
-                    nan_frac = float(np.isnan(window).mean())
-                    if nan_frac > 0.30:
-                        continue  # too many gaps; skip this sample for ARIMA
-                    # Short-gap forward-fill (≤3 steps = 15 min) — causal
-                    window_series = pd.Series(window).ffill(limit=3)
-                    if window_series.isna().any():
-                        # Remaining NaNs at start: fill with first valid value
-                        first_valid = float(window_series.dropna().iloc[0]) if window_series.notna().any() else np.nan
-                        if np.isnan(first_valid):
-                            continue
-                        window_series = window_series.fillna(first_valid)
-                    encoder_windows[i] = window_series.to_numpy(dtype=float)
-            else:
-                log.warning(
-                    "  [FIX-ISSUE-13] encoder_lengths not available in predictions.x; "
-                    "ARIMA baseline will be skipped (cannot reconstruct mg/dL windows)."
-                )
-
-            last_glucose_list  = []
-            lookup_found_flags = []
-            n_miss = 0
-            for sid, ti in zip(subject_ids, last_enc_ti):
-                key = (str(sid), int(ti))
-                if key in val_lookup.index:
-                    last_glucose_list.append(val_lookup[key])
-                    lookup_found_flags.append(True)
-                else:
-                    last_glucose_list.append(float("nan"))
-                    lookup_found_flags.append(False)
-                    n_miss += 1
-
-            if n_miss > 0:
-                log.warning(
-                    f"  [LEAK-E] {n_miss}/{len(last_glucose_list)} samples "
-                    f"excluded from persistence comparison (no lookup)."
-                )
-                persistence_approximate = True
-
-            last_encoder_glucose  = torch.tensor(last_glucose_list,  dtype=torch.float32)
-            lookup_found_flags_t  = torch.tensor(lookup_found_flags, dtype=torch.bool)
-            persistence_sample_mask = valid_60 & lookup_found_flags_t
-
-        else:
-            log.warning(
-                "  [LEAK-E / ZT-CRIT-1] decoder_time_idx absent. "
-                "Persistence/ARIMA metrics omitted."
-            )
-            persistence_approximate = True
-
-    except RuntimeError:
-        raise
-    except Exception as e:
-        log.warning(f"  Persistence/ARIMA setup failed ({e}). Baselines omitted.")
-        persistence_approximate = True
-
-    if (
-        last_encoder_glucose is not None
-        and persistence_sample_mask is not None
-        and len(y_pred_v60) > 0
-    ):
-        n_clean   = int(persistence_sample_mask.sum().item())
-        n_valid60 = int(valid_60.sum().item())
-        clean_pct = n_clean / max(n_valid60, 1)
-
-        log.info(
-            f"  [LEAK-E] Clean persistence lookups: "
-            f"{n_clean}/{n_valid60} ({clean_pct:.1%})"
-        )
-
-        if clean_pct < 0.50:
-            log.warning(
-                f"  [LEAK-E] < 50% clean lookups ({clean_pct:.1%}). "
-                "Baselines omitted."
-            )
-            metrics["persistence_is_approximate"] = 1.0
-        else:
-            pers_clean  = last_encoder_glucose[persistence_sample_mask]
-            ytrue_clean = y_true_mgdl[:, step_60][persistence_sample_mask]
-            ypred_clean = y_pred_mgdl[:, step_60][persistence_sample_mask]
-
-            persistence_mae  = (pers_clean - ytrue_clean).abs().mean().item()
-            persistence_mard = (
-                (pers_clean - ytrue_clean).abs()
-                / ytrue_clean.abs().clamp(min=1.0)
-            ).mean().item() * 100.0
-
-            approx_flag = " (some excluded)" if persistence_approximate else ""
-            log.info(f"    Persistence MAE  : {persistence_mae:.2f} mg/dL{approx_flag}")
-            log.info(f"    Persistence MARD : {persistence_mard:.2f}%{approx_flag}")
-
-            model_mard_clean = (
-                (ypred_clean - ytrue_clean).abs()
-                / ytrue_clean.abs().clamp(min=1.0)
-            ).mean().item() * 100.0
-            improvement_over_persistence = persistence_mard - model_mard_clean
-            log.info(f"    Model MARD (same subset): {model_mard_clean:.2f}%")
-            log.info(
-                f"    Improvement over persistence: "
-                f"{improvement_over_persistence:+.2f}pp"
-            )
-
-            if improvement_over_persistence <= 0:
-                log.warning(
-                    "    ⚠ Model does NOT beat persistence at t+60. [ZT-MED-4]"
-                )
-
-            metrics["persistence_mard_60m_pct"]       = round(persistence_mard,  4)
-            metrics["persistence_mae_60m_mg_dl"]      = round(persistence_mae,   4)
-            metrics["persistence_is_approximate"]     = float(persistence_approximate)
-            metrics["n_persistence_lookups_used"]     = float(n_clean)
-            metrics["model_mard_60m_persistence_subset"] = round(model_mard_clean, 4)
-
-            # ── [AUDIT-MED-NEW-1] ARIMA(1,1,0) baseline ──────────────────
-            if _STATSMODELS_AVAILABLE and encoder_windows:
-                clean_indices   = persistence_sample_mask.nonzero(as_tuple=True)[0].tolist()
-                arima_preds     = []
-                arima_trues     = []
-                # [FIX-ISSUE-5] Track the exact batch indices that contributed
-                # to arima_preds so that the model-vs-ARIMA comparison is
-                # computed on the SAME set of samples as the ARIMA metrics.
-                # The old code used `i < len(arima_preds)` (a positional count)
-                # which included indices where ARIMA had failed, producing a
-                # model MARD over a different (larger) population than ARIMA.
-                arima_batch_indices = []
-                n_arima_ok      = 0
-                n_arima_fail    = 0
-
-                for idx in clean_indices:
-                    if idx not in encoder_windows:
-                        n_arima_fail += 1
-                        continue
-                    enc_glucose = encoder_windows[idx]
-                    forecast    = _compute_arima_baseline(enc_glucose, MAX_PREDICTION_LENGTH)
-                    if forecast is None or not np.all(np.isfinite(forecast)):
-                        n_arima_fail += 1
-                        continue
-                    pred_60 = forecast[step_60]
-                    true_60 = float(y_true_mgdl[idx, step_60].item())
-                    if not (20.0 < true_60 < 400.0):
-                        # Sample excluded from ARIMA metrics; do NOT add to
-                        # arima_batch_indices either (keeps sets identical).
-                        continue
-                    arima_preds.append(pred_60)
-                    arima_trues.append(true_60)
-                    arima_batch_indices.append(idx)   # parallel to arima_preds
-                    n_arima_ok += 1
-
-                if n_arima_ok >= 10:
-                    ap = np.array(arima_preds, dtype=float)
-                    at = np.array(arima_trues, dtype=float)
-                    arima_mard = float(
-                        np.mean(np.abs(ap - at) / np.clip(np.abs(at), 1.0, None)) * 100.0
-                    )
-                    arima_mae  = float(np.mean(np.abs(ap - at)))
-                    log.info(
-                        f"    ARIMA(1,1,0) MAE  : {arima_mae:.2f} mg/dL "
-                        f"(n={n_arima_ok}, {n_arima_fail} failed)"
-                    )
-                    log.info(f"    ARIMA(1,1,0) MARD : {arima_mard:.2f}%")
-
-                    # Model MARD on the exact same samples as ARIMA.
-                    # [FIX-ISSUE-5] arima_batch_indices is in 1-to-1
-                    # correspondence with arima_preds — no positional mismatch.
-                    arima_clean_idx_t = torch.tensor(
-                        arima_batch_indices, dtype=torch.long,
-                    )
-                    if len(arima_clean_idx_t) > 0:
-                        model_preds_arima_subset = y_pred_mgdl[:, step_60][arima_clean_idx_t]
-                        true_arima_subset        = y_true_mgdl[:, step_60][arima_clean_idx_t]
-                        model_mard_arima = (
-                            (model_preds_arima_subset - true_arima_subset).abs()
-                            / true_arima_subset.abs().clamp(min=1.0)
-                        ).mean().item() * 100.0
-                        improvement_over_arima = arima_mard - model_mard_arima
-                        log.info(
-                            f"    Model MARD (ARIMA subset): {model_mard_arima:.2f}%"
-                        )
-                        log.info(
-                            f"    Improvement over ARIMA: {improvement_over_arima:+.2f}pp"
-                        )
-                        if improvement_over_arima <= 0:
-                            log.warning(
-                                "    ⚠ Model does NOT beat ARIMA(1,1,0) at t+60. "
-                                "[AUDIT-MED-NEW-1]"
-                            )
-                        metrics["arima_mard_60m_pct"]        = round(arima_mard, 4)
-                        metrics["arima_mae_60m_mg_dl"]       = round(arima_mae,  4)
-                        metrics["n_arima_samples"]           = float(n_arima_ok)
-                        metrics["model_mard_arima_subset"]   = round(model_mard_arima, 4)
-                        metrics["improvement_over_arima_pp"] = round(
-                            improvement_over_arima, 4
-                        )
-                else:
-                    log.warning(
-                        f"  [AUDIT-MED-NEW-1] Only {n_arima_ok} successful ARIMA fits "
-                        f"({n_arima_fail} failed). ARIMA metrics omitted."
-                    )
-            elif not _STATSMODELS_AVAILABLE:
-                log.warning(
-                    "  [AUDIT-MED-NEW-1] statsmodels not available — "
-                    "ARIMA baseline skipped. Install with: pip install statsmodels"
-                )
-
-    metrics["eval_scope"] = 0.0
-    log.info(
-        "  [ZT-MED-4] eval_scope=within_subject_temporal. "
-        "For population generalisation, re-evaluate on held-out patients."
-    )
-    return metrics
+        from .evaluation_stage_c import evaluate as evaluate_stage_c
+    return evaluate_stage_c(model, validation, args, val_df,
+                            context=context, output_dir=output_dir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

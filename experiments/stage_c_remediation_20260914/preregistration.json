@@ -1,0 +1,52 @@
+{
+  "revision": "nmd-stage-c-remediation-1",
+  "campaign": "stage_c_remediation_20260914",
+  "seed": 42,
+  "device": "cpu",
+  "precision": "32-true",
+  "workers": 0,
+  "eval": true,
+  "no_grad": true,
+  "budget": {
+    "unique_selected_windows": 64,
+    "forward_batch_calls": 24,
+    "backward": 0,
+    "optimizer_steps": 0,
+    "watchdog_seconds": 600
+  },
+  "tolerances": {
+    "oracle": {
+      "atol": 1e-10,
+      "rtol": 1e-08
+    },
+    "integration": {
+      "atol": 1e-05,
+      "rtol": 1e-05
+    },
+    "source_y_comparison": "source cast float32 versus PF float32; same integration tolerance",
+    "keys_counts": "exact"
+  },
+  "fixture": "two synthetic subjects A/B,65 regular 5min bins; A=75+.8i,B=180+1.5i; train and assessment roles; isolated coherent edge fixtures; context48/horizon12",
+  "errors": [
+    "alignment",
+    "length",
+    "role",
+    "schema",
+    "quantiles",
+    "finite",
+    "target_domain",
+    "persistence",
+    "context",
+    "compatibility",
+    "artifact"
+  ],
+  "head": "58c2e36dc108ef3d88de888a3fffc18c63af05bb",
+  "initial_dirty": false,
+  "source_hashes": {
+    "AGENTS.md": "18694ef1a11969e0e0bb6dbaba36b1b95b07178f45f4366841068c54e177d0e6",
+    "docs/CODEX_STAGE_C_REMEDIATION_TASK.md": "3a90de0603f4e926d75cd0fe6b9fbfac1d602aeec6b0abdbffd0dca04e7d583f",
+    "docs/STAGE_C_REMEDIATION_PLAN.md": "b6dd6a38a885de02d8e4c8bc11384decb889125d064ce5950817d8ef47986957",
+    "docs/STAGE_C_EXECUTION_CONTRACT.md": "a7a631d8d1cd36cff1847d44878380ec2ca97680115abe08be9d6d42eb1d2610",
+    "configs/baseline_v1.json": "f0fcc65130f5b299c2a3c116da7adefb59bf746e9a6923aa8c53463ef88b57ab"
+  }
+}

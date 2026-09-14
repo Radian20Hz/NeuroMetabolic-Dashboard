@@ -1,0 +1,216 @@
+[
+  {
+    "id": "C00_guards",
+    "status": "PASS",
+    "evidence": [
+      "forbidden data/model open",
+      "forbidden data/model open",
+      "forbidden data/model open",
+      "main",
+      "load_test_data",
+      "Trainer.fit",
+      "Tensor.backward",
+      "AdamW.step"
+    ],
+    "seconds": 0.0047459430006711045
+  },
+  {
+    "id": "C01_C03_C18_real_PF_evaluate_readback",
+    "status": "PASS",
+    "evidence": {
+      "flow": {
+        "candidate_index_rows": 108,
+        "eligible_windows": 12,
+        "excluded": {
+          "length": 96,
+          "unobserved_decoder": 0,
+          "encoder": 0
+        }
+      },
+      "denominators": {
+        "occurrences": 144,
+        "windows": 12,
+        "unique_subject_target_timestamps": 34,
+        "subjects": 2
+      }
+    },
+    "seconds": 0.44597873499878915
+  },
+  {
+    "id": "C02_normalizer_real_batch_sentinels_roundtrip",
+    "status": "PASS",
+    "evidence": {
+      "scales": [
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          4.5997919368151114,
+          0.15375517684127865
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ],
+        [
+          5.421621146133875,
+          0.12672485428853297
+        ]
+      ],
+      "mapping": {
+        "synthetic_A": 0,
+        "synthetic_B": 1
+      }
+    },
+    "seconds": 0.5205885110008239
+  },
+  {
+    "id": "C01_keys_y_lengths_coherent_permutation",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.006180686001243885
+  },
+  {
+    "id": "C03_source_roles_missingness_full48",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.03392992800036154
+  },
+  {
+    "id": "C03_all_q_finite_domain",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.001983538999411394
+  },
+  {
+    "id": "C03_C04_scalar_full_precision",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.0017655739993642783
+  },
+  {
+    "id": "C08_complete_persistence_lineage",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.31779564400130766
+  },
+  {
+    "id": "C10_C11_C12_quantiles_intervals_crossing",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.0011149239999213023
+  },
+  {
+    "id": "C05_C06_C07_all_panels_macro_overlap_ranges",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.18271420000019134
+  },
+  {
+    "id": "C04_C05_C06_C07_C11_C12_complete_oracle_matrix",
+    "status": "PASS",
+    "evidence": {
+      "panels": 117,
+      "subjects": [
+        "A",
+        "B",
+        "absent"
+      ],
+      "oracle": "independent FP64 loops"
+    },
+    "seconds": 0.5811325180002314
+  },
+  {
+    "id": "C18_context_preload_state_output_tamper",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.12637078799889423
+  },
+  {
+    "id": "C03_C08_invalid_publication_planned_N",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.11556990899953234
+  },
+  {
+    "id": "C01_real_uneven_reversed_batches",
+    "status": "PASS",
+    "evidence": {
+      "max_abs": 0.0001068115234375,
+      "batches": 3
+    },
+    "seconds": 0.12972589099990728
+  },
+  {
+    "id": "C03_native_model_finite_gate",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.14097833900086698
+  },
+  {
+    "id": "C03_real_PF_late_fault",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.18680813100036175
+  },
+  {
+    "id": "C14_C17_raw_language_empty_Clarke",
+    "status": "PASS",
+    "evidence": null,
+    "seconds": 0.3821658610013401
+  },
+  {
+    "id": "C13_C14_loss_algebra_CQR_definition_only",
+    "status": "PASS",
+    "evidence": {
+      "C13-F01": "ACCEPTED LIMITATION",
+      "C14-F01": "NOT IMPLEMENTED/DEFERRED",
+      "calibration_fit": "NOT IMPLEMENTED"
+    },
+    "seconds": 0.006196186001034221
+  },
+  {
+    "id": "C19_state_no_updates",
+    "status": "PASS",
+    "evidence": {
+      "state_sha256": "393be948772609de69af7212aa14397e82bbfca1d1a11c72f5053b264adaeaf2",
+      "state_unchanged": true,
+      "backward": 0,
+      "optimizer_steps": 0
+    },
+    "seconds": 0.010315393999917433
+  }
+]
