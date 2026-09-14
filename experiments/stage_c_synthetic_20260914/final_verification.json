@@ -1,0 +1,16 @@
+{
+  "HEAD": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+  "branch": "research/baseline-audit",
+  "status": "?? configs/baseline_stage_c_audit.json\n?? docs/BASELINE_AUDIT_STAGE_C.md\n?? experiments/stage_c_synthetic_20260914/README.md\n?? experiments/stage_c_synthetic_20260914/configs/baseline_stage_c_audit.json\n?? experiments/stage_c_synthetic_20260914/configs/followup_preregistration.json\n?? experiments/stage_c_synthetic_20260914/execution_summary.json\n?? experiments/stage_c_synthetic_20260914/findings.json\n?? experiments/stage_c_synthetic_20260914/static_source_hashes.json\n?? experiments/stage_c_synthetic_20260914/tests/followup_stage_c.py\n?? experiments/stage_c_synthetic_20260914/tests/run_stage_c.py\n",
+  "tracked_production_diff": "",
+  "staged": "",
+  "git_diff_check_exit": 0,
+  "state_artifact_ignored": true,
+  "source_hashes_unchanged": true,
+  "baseline_config_unchanged": true,
+  "installed_versioned": "/home/radian/NeuroMetabolic Dashboard/experiments/stage_c_synthetic_20260914",
+  "installed_local_ignored": "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_synthetic_20260914",
+  "committed": false,
+  "pushed": false,
+  "remediation": false
+}

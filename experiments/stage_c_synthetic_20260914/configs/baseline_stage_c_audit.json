@@ -1,0 +1,112 @@
+{
+  "version": "nmd-stage-c-synthetic-audit-1",
+  "contract": "nmd-stage-c-contract-1",
+  "source_repo": "/home/radian/NeuroMetabolic Dashboard",
+  "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+  "initial_status": "",
+  "scope": "C-core synthetic only",
+  "seed": 42,
+  "context": 48,
+  "horizon": 12,
+  "units": "mg/dL",
+  "quantiles": [
+    0.02,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    0.9,
+    0.98
+  ],
+  "intervals": [
+    [
+      0.25,
+      0.75,
+      0.5
+    ],
+    [
+      0.1,
+      0.9,
+      0.8
+    ],
+    [
+      0.02,
+      0.98,
+      0.96
+    ]
+  ],
+  "budget": {
+    "max_windows": 64,
+    "max_forward_batch_calls": 24,
+    "optimizer_steps": 0,
+    "backward": 0,
+    "watchdog_seconds": 600
+  },
+  "tolerances": {
+    "oracle": {
+      "atol": 1e-10,
+      "rtol": 1e-08
+    },
+    "integration": {
+      "atol": 1e-05,
+      "rtol": 1e-05
+    },
+    "keys_counts": "exact"
+  },
+  "roles": [
+    "synthetic_train_normalizer",
+    "synthetic_assessment",
+    "synthetic_test_sentinel"
+  ],
+  "formulas": {
+    "MAE": "sum(abs(p-y))/N",
+    "RMSE": "sqrt(sum((p-y)^2)/N)",
+    "MARD": "100*sum(abs(p-y)/y)/N; y>0",
+    "bias": "sum(p-y)/N",
+    "pinball": "mean((y-z)*(q-I(y<z))); unweighted; no factor2",
+    "hit": "mean(y<=z)",
+    "PICP": "mean(L<=y<=U); inverted pair INVALID",
+    "width": "mean(U-L); inverted pair INVALID",
+    "crossing_any": "mean(any(z[j]>z[j+1]))",
+    "crossing_adjacent": "sum(z[j]>z[j+1])/(N*(K-1))",
+    "macro": "equal mean of patient metrics, including mean(patient RMSE)",
+    "empty": "null,N=0,reason",
+    "invalid": "nonfinite or y<=0 invalid full comparison; finite p<=0 retained",
+    "eligibility": "full48/12; observed decoder; same W for both models",
+    "strata": "(0,54),[54,70),[70,180],(180,250],(250,inf)",
+    "CQR": "k=ceil((n+1)*(1-alpha)); k>n => infinity",
+    "weighted": "Fw=E[w(Y)I(Y<=a)]/E[w(Y)]; uniform(0,140) median49"
+  },
+  "source_hashes": {
+    "AGENTS.md": "18694ef1a11969e0e0bb6dbaba36b1b95b07178f45f4366841068c54e177d0e6",
+    "docs/RESEARCH_WORKFLOW.md": "99f9fd19a96b4d40f7cfbd0e68b54cbf672e5bdcd132cb43ee038cf700c5137e",
+    "docs/ROADMAP.md": "d5f8c5b8af41118520ecc329d1a81983567d24322296af2695c2449c00139be1",
+    "docs/BASELINE_AUDIT_STAGE_A_REMEDIATION.md": "d2c5973e960776038bad18547e2f08afa49cea97760df8874c86f82ee68dcd60",
+    "docs/BASELINE_STAGE_B_REMEDIATION.md": "2f056b8eba7b664c039a4cd85fa69af6145ef15a7828509e63cbdce50f4f1fcb",
+    "docs/STAGE_B_FINAL_REVIEW.md": "edfaf0307fcd72b069c4849924d67b5a23d6881f5ffc7743b3c4e0f1913e4d20",
+    "docs/STAGE_B_FINALIZATION_REPORT.md": "e04b65e07cc455f87c9e5047aba10d71a4c2644851a381002d1df31dd77e53e4",
+    "docs/STAGE_C_AUDIT_PLAN.md": "97455e8db73249854c0abd7a9b26237b53c7b512c44464f6098f185ff4257583",
+    "docs/CODEX_STAGE_C_TASK.md": "5b976731f0388b01ebdaf8cc167aa89e6ef420dafa8026fa17bf1759d676244d",
+    "docs/STAGE_C_EXECUTION_CONTRACT.md": "a7a631d8d1cd36cff1847d44878380ec2ca97680115abe08be9d6d42eb1d2610",
+    "docs/NEXT_SESSION_BRIEF.md": "346b7fc981591e71f4391bc3ee79227cc4e7e72fa1bade306c5073fd3c94daaa",
+    "configs/baseline_v1.json": "f0fcc65130f5b299c2a3c116da7adefb59bf746e9a6923aa8c53463ef88b57ab"
+  },
+  "code_hashes": {
+    "ml/scripts/train_tft.py": "2a9263cc7f63f66a6d493e5489a431528bdd6e32f06c2fc3a6af46a48a485e31",
+    "ml/scripts/export_onnx.py": "0d57045cfac19e29c3cfd6babf3299ac53d53c4bfb57130850888a65603fda30",
+    "ml/scripts/generate_synthetic_patients.py": "288f30894c01c0a04d659e1268475b05916c34434c0815c06e450959da9d9bd4",
+    "ml/scripts/preprocess_ohiot1dm.py": "9e654c63fe1dc1bb4f189302b91e06281c39aff0a48e6f4410d2f3e5d1b463d3",
+    "ml/scripts/tune_tft.py": "853b38fcc94c4cc6250e1dac6421541b471c92c28fe61a92845f2ded50fc7e4a",
+    "ml/scripts/train_tft_population_v2.py": "0c390f9f90d7b018f5c4d265b8de64ddb49bc0fdc758849bf0028ce25211dd5e",
+    "ml/scripts/temporal_protocol.py": "e0f0661387dffe1563669284fcfeb009ad7a6bab15712011e6f26ef9637889f0",
+    "ml/scripts/observed_windows.py": "f530d31ff6c41f50c28b86e02ad70af5c749b763799377ab11df872d916417a9",
+    "ml/scripts/finite_training.py": "3e0adea81cd1fdef6fec933213b1c1cb84b5fe8172716c7a69acab78e4abbf6a",
+    "ml/scripts/checkpoint_registry.py": "db20a88cf84813b78e9434baf3798ad9737e787aa7f86be7ef483b4cfc7b98b1",
+    "ml/scripts/baseline_training.py": "0cdef5a6311e3804cda69dfbc936cafb5fa4b560e12e53c71250c0b569018d74",
+    "ml/scripts/numerical_profile.py": "5bf981d01877b1900a0c8f0426a5aa27966ec9d6a64ceb9c8639e0306c0e5630"
+  },
+  "inherited_data_evidence": {
+    "sha256": "d14fe31b1b81971639ca8d5ba17b4882fbd6711569e30785f0da7b91a0c031cf",
+    "fresh_read": false
+  }
+}

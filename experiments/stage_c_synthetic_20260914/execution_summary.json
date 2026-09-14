@@ -1,0 +1,43 @@
+{
+  "run01": {
+    "manifest_counts": {
+      "PASS": 23,
+      "FAIL": 22
+    },
+    "manifest_planned_exit": 1,
+    "observed_shell_exit": 143,
+    "note": "Full results and manifest were written; delayed native import initially appeared hung. Explicit SIGTERM was issued while process remained alive. Preserve test evidence; do not call whole OS process clean exit."
+  },
+  "run02": {
+    "PASS": 23,
+    "FAIL": 22,
+    "shell_exit": 1
+  },
+  "run03": {
+    "PASS": 8,
+    "FAIL": 5,
+    "shell_exit": 1
+  },
+  "total_executed_checks": 103,
+  "PASS": 54,
+  "FAIL": 49,
+  "ERROR_test_cases": 0,
+  "SKIP": 0,
+  "XFAIL": 0,
+  "forward_calls_total": 21,
+  "max_forward_calls": 24,
+  "unique_full_windows": 12,
+  "candidate_validation_index_rows_inspected": 108,
+  "forward_windows_limit_applies_to_selected_fixture": true,
+  "optimizer_steps": 0,
+  "backward": 0,
+  "unique_test_names": 57,
+  "preregistered_config_sha256": "30318ca5e900c09bbce1ea82efdbe4750009738db23b36f3ffd8a1631f045630",
+  "diagnostic_import_probe": {
+    "sandbox": "15s faulthandler timeout inside torch._C import; exit1",
+    "outside_sandbox": "torch2.11.0+cu130 import succeeded",
+    "forward_calls": 0
+  },
+  "guard_scope": "Python audit-hook denies real data/model files before open; production loaders/fit/backward/optimizer blocked; no native data loader invoked. No OS-wide sandbox claim for outside-sandbox run.",
+  "followup_counter_correction": "Follow-up preregistration counted8 earlier forwards before discovering run01 completion; actual prior count16, supplemental5, total21<=24. Original preregistration preserved."
+}

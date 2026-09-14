@@ -1,0 +1,10 @@
+{
+  "reason": "Investigate C02 same returned scale; strengthen real PF finite-path coverage and provenance roundtrip; no production edits",
+  "parent_config_sha256": "30318ca5e900c09bbce1ea82efdbe4750009738db23b36f3ffd8a1631f045630",
+  "prior_actual_forward_calls": 8,
+  "remaining_total_forward_calls": 16,
+  "tolerances": "unchanged",
+  "max_selected_windows": 12,
+  "source": "same HEAD; same fixture",
+  "primary_Clarke_PDF": "HTTP403; full boundaries NOT EVALUATED"
+}

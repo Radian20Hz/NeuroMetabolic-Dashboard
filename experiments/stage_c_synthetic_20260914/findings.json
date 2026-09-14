@@ -1,0 +1,458 @@
+[
+  {
+    "id": "C01-F01",
+    "title": "Brak weryfikacji targetów względem kanonicznych keys",
+    "severity": "BLOCKER",
+    "status": "CONFIRMED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2191–2198,2352–2388",
+      "tests": [
+        "run03:C01_target_key_mismatch"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Każdy zwrócony target odpowiada subject/origin/h w źródłowym W; mismatch → INVALID.",
+    "actual": "Odwrócenie kolejności predictions.y bez zmiany x/output nadal zwraca metryki. Natywny nieuszkodzony PF przeszedł alignment i permutację.",
+    "scientific_impact": "Wykazano brak ochrony granicy evaluate przed błędną parą. Nie wykazano spontanicznego mieszania targetów przez PF. Taka awaria unieważnia całe porównanie.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Jawny manifest keys i walidacja targetów/lengths/source role przed redukcją.",
+    "future_regression_and_DoD": "Perturbacja tylko y lub keys musi odmówić; prawidłowa permutacja wszystkich pól razem ma zachować wynik.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C02-F01",
+    "title": "GroupNormalizer używa fallback zamiast statystyk osoby",
+    "severity": "HIGH",
+    "status": "CONFIRMED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:create_time_series_dataset 1678–1690; PF encoders.py:get_parameters 1295–1306; timeseries/_timeseries.py 2134",
+      "tests": [
+        "run02:C02_group_transform",
+        "run03:C02_subject_normalizer_parameters",
+        "run03:C02_distinct_inverse_math"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Dwie znane osoby otrzymują własne obserwowane-train center/scale, zgodne z mapowaniem PF.",
+    "actual": "Dopasowane A=(4.5997919368,0.1537551768), B=(5.4216211461,0.1267248543). Wszystkie 12 target_scale=(5.0107064247,0.1402400136), tj. missing_ po FP32. norm_ ma string keys, PF przekazuje grupy 0/1. Niezależna matematyka inverse dla dwóch ręcznych skal PASS.",
+    "scientific_impact": "Kontrakt normalizacji grupowej nie jest realizowany na fixture. Brak dowodu wpływu na historyczne wyniki, nie twierdzimy double inverse ani niewłaściwych jednostek w całym evaluatorze. Znacząca luka na styku A/C.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Uzgodnić kodowanie kluczy podczas fit/transform/get_parameters przez wspierane API PF, zachowując observed-train-only fitting; osobny review wpływu na baseline/provenance.",
+    "future_regression_and_DoD": "Porównać batch target_scale i normalizowane wejścia do niezależnego per-subject oracle; zapewnić brak fallback dla znanych osób i osobne zachowanie unseen. Nie uznawać samego fitted norm_ za dowód.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C03-F01",
+    "title": "Zastępowanie NaN/Inf i usuwanie uszkodzonych targetów",
+    "severity": "BLOCKER",
+    "status": "CONFIRMED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2205–2226,2247–2256",
+      "tests": [
+        "run02:C03_prediction_nan/posinf/neginf",
+        "run02:C03_target_nan",
+        "run03:C03_real_predict_late_corruption",
+        "run03:C03_native_nonfinite_model_gate"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Nonfinite na ważnej pozycji → INVALID z pełnym N; padding osobno.",
+    "actual": "NaN→0 i N12→11, MAE60=0; +Inf→400 (MAE23.15); −Inf→40 (MAE6.85); NaN target usuwa wiersz. Real PF z fault hook po FiniteModel: dwa NaN → N10, zwykłe metrics. Fault wewnątrz modelu jest prawidłowo odrzucany przez istniejący FiniteModel.",
+    "scientific_impact": "Ochrona modelu nie usprawiedliwia sanitizacji na granicy evaluator. Kontrolowana awaria może dać korzystniejszy wynik albo skończoną fikcyjną prognozę. Nie dowiedziono naturalnego występowania tych awarii w treningu.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Fail-fast/INVALID przed nan_to_num i redukcją; utrzymać rozróżnienie ważnych pozycji i padding.",
+    "future_regression_and_DoD": "NaN/±Inf output i target w granicy PF→evaluate muszą unieważnić wynik; existing model gate nadal PASS.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C03-F02",
+    "title": "Nieuzgodniona selekcja przez y i predykcję",
+    "severity": "BLOCKER",
+    "status": "CONFIRMED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2247–2256,2282–2291",
+      "tests": [
+        "run02:C03_finite_negative_retained",
+        "run02:C03_targets20_400_401",
+        "run02:C04_zero_target_invalid",
+        "run03:C04_nearzero_positive",
+        "run03:C03_finite_zero_retained"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Finite p≤0 pozostaje błędem; wszystkie y>0 są w mianowniku; y≤0 → INVALID.",
+    "actual": "p=−10 lub0: wiersz odrzucony. y=[20,400,401,100×9] → N9 i MAE0 zamiast N12 i MAE31/12. y=.1 odrzucony; y=0 pominięty bez INVALID.",
+    "scientific_impact": "Model wybiera własną ocenianą populację; błędy na skrajnych wartościach są ukrywane. Dotyczy też mianowników marginal hits i persistence, więc główne porównanie nieważne.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Usunąć nieuzgodnione maski z raportowania; walidować y>0; flagować niefizjologiczne finite pred bez usuwania.",
+    "future_regression_and_DoD": "Exact N i błędy dla p<0,p=0,y=.1/20/400/401; y≤0 odmawia. W i hash keys identyczne dla modeli.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C03-F03",
+    "title": "Guard ewaluacji nie wymaga pełnego 48/12",
+    "severity": "HIGH",
+    "status": "CONFIRMED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "observed_windows.py:assert_observed_evaluation 73–78; train_tft_population_v2.py 1683–1684,1691–1693,2244–2245",
+      "tests": [
+        "run02:C03_full48_guard",
+        "run02:C03_decoder_lengths_padding"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Główna ewaluacja tylko pełny encoder48 i decoder12. Krótsza fixture pomocnicza odrzucona lub poprawnie maskowana.",
+    "actual": "Produkcyjny builder daje 108 candidate validation index rows, w tym96 encoderów<48; guard je akceptuje. Zmiana returned decoder_lengths[0]=6 nie zapobiega liczeniu padding jako targetów; MAE60=8.3333. Audyt forward używa osobnego pełnego subsetu12.",
+    "scientific_impact": "Estymand miesza różne długości historii; padding może trafić do metryk. To luka ewaluacyjna, nie zgoda na zmianę krótkich decoderów treningowych Stage A.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Egzekwować 48/12 wyłącznie dla W ewaluacji i spójność returned lengths z manifestem.",
+    "future_regression_and_DoD": "Naturalnie krótkie encodery i controlled short decoder odmówione przed metrykami; główny N nie zależy od padding values.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C04-F01",
+    "title": "Zaokrąglanie przed zapisem artefaktu metryk",
+    "severity": "LOW",
+    "status": "CONFIRMED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2273–2275,2311,2528–2533",
+      "tests": [
+        "run02:C04_reporting_precision"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Pełna precyzja w danych raportu, rounding tylko prezentacyjny.",
+    "actual": "RMSE sqrt(250)=15.811388300841896 zapisane jako15.8114; błąd1.1699e−5 przekracza prerejestrowany float64 oracle.",
+    "scientific_impact": "Utrata precyzji i odtwarzalności kolejnych agregacji. Nie zmienia zasadniczego werdyktu tego audytu.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Zwracać surowe scalars, formatować jedynie logi/tabele.",
+    "future_regression_and_DoD": "Pełnoprecyzyjny zapis ręcznego oracle; osobna prezentacja pozostaje zaokrąglona.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C05-F01",
+    "title": "Brak per-patient, micro/macro, bias i jawnych pustych grup",
+    "severity": "MEDIUM",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2244–2275,2294–2312,2632",
+      "tests": [
+        "run02:C05_patient_micro_macro_bias",
+        "run02:C05_unequal_patient_oracle",
+        "run02:C04_empty_group",
+        "run02:C15_overlap_denominators"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Pełne tabele z N, macro=średnia metryk osób, micro z occurrences; empty→null,N0,reason.",
+    "actual": "Evaluator zwraca płaski słownik wybranych globalnych mean, bez bias i patient tables; N tylko dla60m. Przy pustej masce pozostają eval_scope/inverse_transform_ok. Oracle: micro RMSE15.811388 vs macro13.660254.",
+    "scientific_impact": "Nie można ocenić heterogeniczności lub równego udziału osób; nominalne N nie identyfikuje niezależnych pomiarów.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Osobny reporting module stosujący zatwierdzone wzory i pełne denominator metadata, bez zmiany lossu.",
+    "future_regression_and_DoD": "Nierówne liczności osób, missing patient, empty stratum i overlap; wszystkie stosowne metryki per-patient/micro/macro.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C06-F01",
+    "title": "Raport obejmuje tylko pięć z dwunastu horyzontów",
+    "severity": "MEDIUM",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2229–2235",
+      "tests": [
+        "run02:C06_all12_horizons"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "h=5,10,…,60 dla wszystkich stosownych metrics i persistence.",
+    "actual": "Obecne TFT h=5/15/30/45/60; pierwszy brak10. Persistence tylko60.",
+    "scientific_impact": "Brak pełnego obrazu degradacji błędu w czasie; nie wolno traktować tej tabeli jako pełnego kontraktu12h.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Raportować wszystkie12, wyróżnienia pozostawić prezentacyjne.",
+    "future_regression_and_DoD": "Liniowy znacznik h daje dokładne indeksy0…11 i wspólny W dla każdego h.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C07-F01",
+    "title": "Brak wymaganych zakresów glikemii",
+    "severity": "MEDIUM",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2117–2632 (pełna ścieżka zwracanego metrics)",
+      "tests": [
+        "run02:C07_strata_reporting",
+        "run02:C07_strata_boundaries"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Dwa poziomy target-defined strata z pełną agregacją i N.",
+    "actual": "Brak stratyfikacji. Niezależny oracle poprawnie rozdziela53.9/54/69.9/70/180/180.1/250/250.1.",
+    "scientific_impact": "Globalny błąd może maskować hypo/hyper; wynik oracle nie dowodzi istniejącego raportowania.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Dodać zatwierdzone strata po observed y, bez dodatkowego filtrowania.",
+    "future_regression_and_DoD": "Rozłączne/wyczerpujące strata, granice float i empty groups, identyczny podział modeli.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C08-F01",
+    "title": "Persistence może przejść na niepełny podzbiór",
+    "severity": "BLOCKER",
+    "status": "CONFIRMED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:_verify_time_idx_alignment 2063–2085; evaluate 2436–2503,2528–2533",
+      "tests": [
+        "run02:C08_missing_one_of12",
+        "run02:C08_missing_decoder_index"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Brak dowolnego lookup/key → INVALID pełnego porównania, bez zmniejszania W.",
+    "actual": "Perturbacja jednego origin poza źródło:91.67% przechodzi próg90%, TFT N12, persistence N11, persistence_is_approximate=1, zwykłe metrics. Brak decoder_time_idx tylko pomija baseline.",
+    "scientific_impact": "Porównanie nie odpowiada pełnemu W; diagnostyczny subset nie może zastępować obligatoryjnej persistence.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Wymagać kompletnego dokładnego key set i source lookup; jawnie odmówić pełnego wyniku.",
+    "future_regression_and_DoD": "Brak1/12, brak klucza, błędny subject/time oraz niezgodne jednostki odmawiają; żadnego progu90%/50%.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C08-F02",
+    "title": "Brak lineage ostatniej obserwacji persistence",
+    "severity": "MEDIUM",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2386–2388,2441–2458",
+      "tests": [
+        "run02:C08_ffill_origin",
+        "run02:C08_persistence_two_subject_ramp"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Zapis s*,age_bins≤6,ffill flag, źródłowe target_observed i zgodność z końcem encodera.",
+    "actual": "Lookup używa wartości w ostatnim time_idx, bez wyprowadzenia/zapisu s* i wieku. Ramp i dozwolony ffill age1 dają poprawny wynik na fixture; brak śladu pochodzenia nie jest dowodem błędnej wartości.",
+    "scientific_impact": "Nie można niezależnie zweryfikować dostępności obserwacji w chwili prognozy i limitu wieku z artefaktu ewaluacji.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Jawnie wyprowadzić/zapisać ostatnią obserwację w context i porównać z dozwolonym ffill.",
+    "future_regression_and_DoD": "Age0/1/6, brak source, source poza context i niespójny końcowy CGM; nie dodawać wymogu świeżej obserwacji w origin.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C10-F01",
+    "title": "Oś kwantyli odczytywana z globalnej listy",
+    "severity": "HIGH",
+    "status": "CONFIRMED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2218–2225,2308–2311",
+      "tests": [
+        "run02:C10_model_quantile_mismatch"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Q z modelu/artefaktu, identyczne z kontraktem, uporządkowane i zgodne z osią.",
+    "actual": "Model deklarujący q=.5 na osi0 i .25 na osi3 przyjęty; evaluator czyta index3, MAE30 mimo dokładnego wyjścia rzeczywistego q=.5.",
+    "scientific_impact": "Błędna point prediction i błędne etykiety hits przy mismatch. Registry Stage B posiada osobne bramki; evaluate nie wymaga ich wywołania.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Wymusić kompatybilność Q przed predykcją/redukcją, indeksować po zweryfikowanym model Q.",
+    "future_regression_and_DoD": "Mismatched/permuted/missing/duplicate Q i wrong output K odmawiają; native Q poprawne.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C11-F01",
+    "title": "Crossing i odwrócone przedziały bez diagnostyki",
+    "severity": "HIGH",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2306–2337",
+      "tests": [
+        "run02:C11_crossing_reporting",
+        "run02:C11_crossing_ties_oracle"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Raw any/adjacent crossing + magnitude; odwrócona para → INVALID interval summary z pełnym N.",
+    "actual": "Controlled q25=y+10,q75=y−10 nie daje crossing fields ani INVALID interval. Oracle any1/3, adjacent1/6, magnitude2.",
+    "scientific_impact": "Nie da się ocenić spójności raw quantiles; marginal hits nie zastępują tej kontroli.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Dodać diagnostykę raw oraz walidację par, bez sortowania/clippingu.",
+    "future_regression_and_DoD": "Ties nie crossing; any i adjacent mają odmienne mianowniki; odwrócone L/U zachowują N_invalid i pierwotny N.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C12-F01",
+    "title": "Brak PICP, width i nieważonego pinball",
+    "severity": "HIGH",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2306–2337",
+      "tests": [
+        "run02:C12_interval_reporting",
+        "run02:C12_interval_pinball_oracle",
+        "run02:C10_interval_endpoint_oracle"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Pinball/hit per q i raw50/80/96 PICP/width we wszystkich przekrojach.",
+    "actual": "Tylko marginal hit per q w60m, zaokrąglany i na masce zależnej od mediany. Żadnego interval summary ani reporting pinball.",
+    "scientific_impact": "Nie można deklarować empirycznego pokrycia przedziałów ani porównywać ich szerokości; training loss nie jest reporting score.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Zaimplementować osobno zatwierdzone reporting metrics, bez factor2/clinical weights.",
+    "future_regression_and_DoD": "Inclusive endpoints, inverted intervals, full axes/strata/N; odmowa90% bez endpointów. Oracle PASS nie zamyka brakującej funkcji.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C13-F01",
+    "title": "Clinical weighting zmienia estimand kwantyli",
+    "severity": "MEDIUM",
+    "status": "CONFIRMED",
+    "layer": "scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:ClinicalQuantileLoss 882–944",
+      "tests": [
+        "run02:C13_weighted_objective",
+        "run02:C13_discrete_quantile_plateau",
+        "run03:C13_all_q_weighted_CDF"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Interpretacja wyjść uwzględnia target-dependent ważenie; brak automatycznej tezy o nieważonej medianie/nominalnym coverage.",
+    "actual": "Loss realizuje2×weighted mean pinball. Uniform[0,140]: q.5 optimum49, nie70; factor2 nie zmienia optimum. Weighted Q=[1.96,9.8,24.5,49,78.75,115.5,135.1].",
+    "scientific_impact": "Nawet poprawnie zoptymalizowany loss nie identyfikuje ogólnie kwantyli nieważonej populacji. To cecha celu, nie błąd implementacji lossu ani zmierzona wada trained model.",
+    "classification": "documented limitation / methodological decision",
+    "minimal_proposed_remediation": "Udokumentować estimand w wynikach; późniejsza niezależna ocena nieważonych hits/intervals. Zmiana objective tylko jako osobne zatwierdzone badanie.",
+    "future_regression_and_DoD": "Zachować analytic/finite oracle i rozdzielenie objective/reporting; przyszły train/validation-only projekt musi mieć odrębne role.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C14-F01",
+    "title": "Kalibracja fit/apply i jej lineage nie są zaimplementowane w baseline",
+    "severity": "MEDIUM",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation / scientific",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "evaluate 2117–2632; main 2636–2657; build_model 1838–1873; baseline_training.py; checkpoint_registry.py",
+      "tests": [
+        "run02:C14_CQR_order_statistic",
+        "static calibration call-path inventory"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Dla deklaracji calibrated intervals potrzebne rozdzielone fit/apply i role; brak ma być jawny.",
+    "actual": "Ścieżka kończy się raw quantiles i marginal hits; nie wywołuje kalibratora. W checkpoint contract brak fitted calibration artifact. CQR jedynie audit oracle.",
+    "scientific_impact": "Brak dowodu kalibracji; nie jest to blocker samego rozpoczęcia C-core, ani dowód złego empirycznego coverage.",
+    "classification": "documented limitation / methodological decision",
+    "minimal_proposed_remediation": "Oznaczyć raw/uncalibrated; osobno zatwierdzić calibration method/splits/crossing policy przed przyszłym fit.",
+    "future_regression_and_DoD": "Fit wyłącznie dozwoloną rolą, perturbacja assessment/test nie zmienia parametrów; zależność czasowa i wymagane założenia jawne.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C17-F01",
+    "title": "Arbitralne metryki nadają etykietę klinicznego bezpieczeństwa",
+    "severity": "HIGH",
+    "status": "CONFIRMED",
+    "layer": "clinical interpretation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2296–2302,2315–2337",
+      "tests": [
+        "run02:C17_clinical_language"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Brak clinical PASS/SAFE z progu MARD lub Clarke A+B, szczególnie dla synthetic/untrained forecasting.",
+    "actual": "Dokładne invented predictions wywołują „clinical accuracy target MET” i „clinically SAFE (≥99%)”. Δhit<.05 również dostaje checkmark bez protokołu kalibracji.",
+    "scientific_impact": "Komunikat wykracza poza dowody: prognoza h>0 nie jest walidacją pomiaru sensora ani bezpieczeństwa klinicznego.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Usunąć automatyczne twierdzenia bezpieczeństwa; opisywać miary diagnostyczne i zakres ich dowodu.",
+    "future_regression_and_DoD": "Przechwycony log dla perfect/poor/empty/crossed fixture nie nadaje safety/confidence na arbitralnych progach.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  },
+  {
+    "id": "C18-F01",
+    "title": "Evaluate nie wiąże provenance modelu, keys i metryk",
+    "severity": "HIGH",
+    "status": "NOT IMPLEMENTED",
+    "layer": "implementation",
+    "evidence": {
+      "commit": "4cc11d8fd7704cf3baeb4301a3b722374aa94fbd",
+      "location": "train_tft_population_v2.py:evaluate 2117–2632; checkpoint_registry.py:verified 192–243",
+      "tests": [
+        "run02:C18_evaluation_provenance",
+        "run03:C18_owned_untrained_roundtrip",
+        "run03:C18_registry_compatibility_controls"
+      ],
+      "fixture_sha256": "7ae240e51cc779a9a8e986a2c4e8dfecc9059403be3b7897c682669ac0a673da",
+      "prediction_sha256": "db437b4578812199e18903fb86bbf5a4d2fd35ead393a67817e71b5c3d316af8",
+      "window_key_sha256": "7f5ed1a2e76922e6f3fea5958522d15b6b0c1536c6437687595d701f51c780ee"
+    },
+    "expected": "Evaluation manifest: code/config/schema/Q/normalizer/model role+hash/data role/keys/predictions/definitions/N. Mismatch odmawia.",
+    "actual": "Evaluate przyjmuje model, dataset,args,frame i oddaje płaski metrics dict, bez manifestu. Audit własnoręcznie zapisuje hashes. Existing registry controls odmówiły4 mismatch, ale nie są wywołane przez evaluate.",
+    "scientific_impact": "Raportu nie da się powiązać z konkretnym kompletnym eksperymentem wyłącznie przez jego wynik. Registry correctness nie dowodzi downstream evaluation provenance.",
+    "classification": "technical bug",
+    "minimal_proposed_remediation": "Wymagać zweryfikowanego evaluation context i zapisywać połączony manifest przy wyniku.",
+    "future_regression_and_DoD": "Wrong checkpoint/schema/Q/role/normalizer/prediction hash odmawia; owned roundtrip i pełne odtwarzanie metryk z raw predictions.",
+    "decision": "Osobna akceptacja remediation po review; nic nie wdrożono."
+  }
+]
