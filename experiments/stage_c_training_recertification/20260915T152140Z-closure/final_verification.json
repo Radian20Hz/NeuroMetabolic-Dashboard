@@ -1,0 +1,25 @@
+{
+  "source_hashes_unchanged": {
+    "ml/scripts/train_tft_population_v2.py": true,
+    "ml/scripts/baseline_training.py": true,
+    "ml/scripts/checkpoint_registry.py": true,
+    "ml/scripts/finite_training.py": true,
+    "ml/scripts/numerical_profile.py": true,
+    "ml/scripts/observed_windows.py": true,
+    "ml/scripts/temporal_protocol.py": true,
+    "ml/scripts/diagnostics/callback_restore.py": true,
+    "configs/baseline_v1_stage_c.json": true,
+    "docs/STAGE_C_TRAINING_RECERTIFICATION_PLAN.md": true,
+    "docs/CODEX_STAGE_C_TRAINING_RECERTIFICATION_TASK.md": true,
+    "ml/tests/stage_c_recertification/campaign.py": true,
+    "ml/tests/stage_c_recertification/closure.py": true,
+    "docs/STAGE_C_TRAINING_RECERTIFICATION_CLOSURE_REVIEW.md": true
+  },
+  "original_inventory_unchanged": true,
+  "syntax": "PASS",
+  "diff_check": "PASS",
+  "production_config_diff": "NONE",
+  "git_status": "?? docs/STAGE_C_TRAINING_RECERTIFICATION_CLOSURE_REVIEW.md\n?? docs/STAGE_C_TRAINING_RECERTIFICATION_REPORT.md\n?? experiments/stage_c_training_recertification/\n?? ml/tests/stage_c_recertification/\n",
+  "staged": "",
+  "report_sha256": "d4d78bc1e3738c74266bd302de3be7d3a9cb192320319afa54638765b1ebe2ae"
+}

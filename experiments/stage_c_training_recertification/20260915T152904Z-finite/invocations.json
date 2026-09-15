@@ -1,0 +1,17 @@
+[
+  {
+    "name": "diagnostic",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T152904Z-finite",
+      "--worker",
+      "diagnostic"
+    ],
+    "exit_code": 1,
+    "seconds": 7.1269056860001,
+    "original_unchanged": true
+  }
+]

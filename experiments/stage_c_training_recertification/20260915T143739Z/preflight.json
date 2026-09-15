@@ -1,0 +1,81 @@
+{
+  "status": "PASS",
+  "expected_gpu": "NVIDIA GeForce RTX 3070",
+  "binary": "/usr/bin/nvidia-smi",
+  "cwd": "/home/radian/NeuroMetabolic Dashboard",
+  "device_nodes": [
+    "/dev/nvidia-caps",
+    "/dev/nvidia-modeset",
+    "/dev/nvidia-uvm",
+    "/dev/nvidia-uvm-tools",
+    "/dev/nvidia0",
+    "/dev/nvidiactl"
+  ],
+  "environment": {
+    "PATH": "/home/radian/.codex/tmp/arg0/codex-arg0Ws8Lzg:/home/radian/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/home/radian/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/lib/chatgpt/resources",
+    "CUDA_VISIBLE_DEVICES": null,
+    "NVIDIA_VISIBLE_DEVICES": null,
+    "LD_LIBRARY_PATH": null,
+    "LD_PRELOAD": null
+  },
+  "device_nodes_visible": true,
+  "nvidia_smi": {
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=name,driver_version,memory.total",
+      "--format=csv,noheader"
+    ],
+    "exit_code": 0,
+    "stdout": "NVIDIA GeForce RTX 3070, 615.71.09, 8192 MiB\n",
+    "stderr": ""
+  },
+  "pytorch": {
+    "version": "2.11.0+cu130",
+    "cuda": "13.0",
+    "available": true,
+    "device_count": 1,
+    "device_names": [
+      "NVIDIA GeForce RTX 3070"
+    ]
+  },
+  "initial_flags": {
+    "deterministic_algorithms": false,
+    "warn_only": false,
+    "cudnn_benchmark": false,
+    "cudnn_deterministic": false,
+    "fp32_precision": "none",
+    "cuda_matmul_precision": "none",
+    "cudnn_precision": "none",
+    "matmul_precision": "highest",
+    "cublas_workspace": null,
+    "precision": "32-true",
+    "amp": false,
+    "num_workers": 0
+  },
+  "effective_flags": {
+    "deterministic_algorithms": true,
+    "warn_only": true,
+    "cudnn_benchmark": false,
+    "cudnn_deterministic": true,
+    "fp32_precision": "ieee",
+    "cuda_matmul_precision": "ieee",
+    "cudnn_precision": "ieee",
+    "matmul_precision": "highest",
+    "cublas_workspace": ":4096:8",
+    "precision": "32-true",
+    "amp": false,
+    "num_workers": 0
+  },
+  "invocation": {
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+      "--preflight",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+    ],
+    "exit_code": 0,
+    "seconds": 11.780243315999996
+  }
+}

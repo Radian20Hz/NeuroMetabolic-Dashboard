@@ -1,0 +1,34 @@
+{
+  "CPU_U": {
+    "run_id": "3106ee7c00854db8a21c01b0389213b6",
+    "source_report_sha256": "1ab9db431182eeca259b75271b227ad084b53b35b86279025bb721fccb6b9637",
+    "copied_inventory": {
+      "epoch-003-step-8.ckpt": "73f0f8b70aee27a67bc3fda13d8893407da57b685d32e20c5c75e8e6f60c7079",
+      "run.json": "60ba84d34cad20537a18df63ca296b27b3e2ca47e513e21642a8df430d9b71e4"
+    }
+  },
+  "CUDA_C1": {
+    "run_id": "0b4cba625cd94552a44026bfaf87438d",
+    "source_report_sha256": "4580d2fca25c8b7abd4ab49f905ec1bce6a25cb52ad1bde455b56b99b7d13aa6",
+    "copied_inventory": {
+      "epoch-003-step-8.ckpt": "f17b9735ca1d57f26ce5890e421481ecefab94bd0f58220955e837e27be8ce72",
+      "run.json": "3aac631914d4b18a557c99733773fca0eba051686e0f5e2657c2474e1abe338d"
+    }
+  },
+  "CPU_P": {
+    "run_id": "f0e2cc2a92e44ab18284bbfbf7b595f1",
+    "source_report_sha256": "1896281ec7683abdabd435b207f0f00c739c86bee3732323c966b93efe757c67",
+    "copied_inventory": {
+      "epoch-001-step-4.ckpt": "4a43dd32c5f965b7aa207a48db3902c4113a184f00d516dd808377e36a8a817d",
+      "run.json": "c62332a0abce4756cf564b3b5116323d985c30b5873982a655e6e0f3a003849d"
+    }
+  },
+  "CUDA_P": {
+    "run_id": "20684841c9ac4cbd9bd1a8aba2c5866e",
+    "source_report_sha256": "b62b32912eba057e146ccadd8993b8d5a45bfa0fdffb7b23cf345faee31772db",
+    "copied_inventory": {
+      "epoch-001-step-4.ckpt": "66ad2c9b4e5e72dcd22c879e6f5a5ad5efae3ce4f7e3d6b50226cebd9b0cb127",
+      "run.json": "33971a6807da60579e0c6737e563dacc6ee75f15e4263434ebf3141b41fc68ae"
+    }
+  }
+}

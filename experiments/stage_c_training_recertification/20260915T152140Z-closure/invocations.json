@@ -1,0 +1,32 @@
+[
+  {
+    "name": "serialization",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T152140Z-closure",
+      "--worker",
+      "serialization"
+    ],
+    "exit_code": 0,
+    "seconds": 12.630903377000323,
+    "original_unchanged": true
+  },
+  {
+    "name": "CPU_N_target",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T152140Z-closure",
+      "--worker",
+      "CPU_N_target"
+    ],
+    "exit_code": 1,
+    "seconds": 6.472029681999629,
+    "original_unchanged": true
+  }
+]

@@ -1,0 +1,548 @@
+"""Single-attempt C02 training recertification; test-only, synthetic-only.
+
+Parent uses stdlib and a hard process-group watchdog. Worker imports are guarded.
+No historical suite execution and no production modifications.
+"""
+import argparse
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import signal
+import shutil
+import subprocess
+import sys
+import time
+import traceback
+
+ROOT = Path(__file__).resolve().parents[3]
+CONFIG = dict(context=48,horizon=12,hidden_size=8,hidden_continuous_size=4,
+    attention_heads=1,lstm_layers=1,dropout=.1,batch_size=2,lr=.0003,gradient_clip=1.,
+    accumulate_grad_batches=1,num_workers=0,epochs=4,max_steps=8,seed=42,shuffle=True,
+    no_swa=True,synthetic_audit=True)
+TOLS = {'loss':(1e-5,1e-4),'validation':(1e-5,1e-4),'pre_clip':(1e-5,1e-3),
+        'post_clip':(1e-5,1e-3),'parameters':(1e-6,1e-4),'lr':(0.,0.)}
+SOURCES = ['ml/scripts/'+n+'.py' for n in ('train_tft_population_v2','baseline_training',
+    'checkpoint_registry','finite_training','numerical_profile','observed_windows','temporal_protocol')]
+SOURCES += ['ml/scripts/diagnostics/callback_restore.py','configs/baseline_v1_stage_c.json',
+    'docs/STAGE_C_TRAINING_RECERTIFICATION_PLAN.md','docs/CODEX_STAGE_C_TRAINING_RECERTIFICATION_TASK.md',
+    str(Path(__file__).relative_to(ROOT))]
+
+def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def save(path,obj):
+    path=Path(path);tmp=path.with_suffix(path.suffix+'.tmp')
+    with tmp.open('w') as f:
+        json.dump(obj,f,indent=2,allow_nan=False);f.flush();os.fsync(f.fileno())
+    os.replace(tmp,path)
+
+def gpu_preflight(root):
+    """Read-only host GPU gate; no model, forward, backward or optimizer."""
+    result=dict(status='ERROR',expected_gpu='NVIDIA GeForce RTX 3070',
+                binary=shutil.which('nvidia-smi'),cwd=os.getcwd(),
+                device_nodes=sorted(str(p) for p in Path('/dev').glob('nvidia*')),
+                environment={k:os.environ.get(k) for k in
+                             ('PATH','CUDA_VISIBLE_DEVICES','NVIDIA_VISIBLE_DEVICES','LD_LIBRARY_PATH','LD_PRELOAD')})
+    result['device_nodes_visible']=bool(result['device_nodes'])
+    try:
+        command=[result['binary'] or 'nvidia-smi','--query-gpu=name,driver_version,memory.total','--format=csv,noheader']
+        probe=subprocess.run(command,text=True,capture_output=True,timeout=15)
+        result['nvidia_smi']=dict(command=command,exit_code=probe.returncode,stdout=probe.stdout,stderr=probe.stderr)
+        save(root/'preflight.json',result)
+        import torch
+        sys.path.insert(0,str(ROOT))
+        from ml.scripts import numerical_profile as n
+        available=torch.cuda.is_available();count=torch.cuda.device_count()
+        names=[torch.cuda.get_device_name(i) for i in range(count)] if available else []
+        result['pytorch']=dict(version=torch.__version__,cuda=torch.version.cuda,
+                               available=available,device_count=count,device_names=names)
+        result['initial_flags']=n.effective()
+        save(root/'preflight.json',result)
+        assert probe.returncode==0,'nvidia-smi failed'
+        assert available and count==1 and names==[result['expected_gpu']],'unexpected CUDA availability/device'
+        assert len(probe.stdout.strip().splitlines())==1 and probe.stdout.split(',')[0].strip()==result['expected_gpu'],'unexpected NVML GPU'
+        assert result['device_nodes_visible'],'NVIDIA device nodes unavailable'
+        n.configure('cuda');result['effective_flags']=n.verify('cuda')
+        result['status']='PASS'
+    except Exception:
+        result['traceback']=traceback.format_exc()
+    finally:
+        save(root/'preflight.json',result)
+    return 0 if result['status']=='PASS' else 1
+
+
+def parent():
+    run_id=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())
+    root=ROOT/'ml/models/stage_c_training_recertification'/run_id
+    meta=ROOT/'experiments/stage_c_training_recertification'/run_id
+    root.mkdir(parents=True,exist_ok=False);meta.mkdir(parents=True,exist_ok=False)
+    save(root/'ledger.json',dict(attempts=0,completions=0,forward=0,backward=0,candidates=0))
+    command=[str(ROOT/'.venv/bin/python'),'-B',str(Path(__file__).resolve()),'--preflight','--root',str(root)]
+    started=time.monotonic()
+    with (root/'preflight.log').open('w') as stream:
+        child=subprocess.Popen(command,cwd=ROOT,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+        try:code=child.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            os.killpg(child.pid,signal.SIGKILL);child.wait();code=124
+    preflight=json.loads((root/'preflight.json').read_text()) if (root/'preflight.json').exists() else {}
+    preflight['invocation']=dict(command=command,exit_code=code,seconds=time.monotonic()-started)
+    save(root/'preflight.json',preflight);save(meta/'preflight.json',preflight)
+    if code or preflight.get('status')!='PASS':
+        result=dict(verdict='ERROR',phase='GPU preflight',counters=json.loads((root/'ledger.json').read_text()),completed=False)
+        save(root/'result.json',result);save(meta/'result.json',result)
+        print(json.dumps(result),flush=True);return 1
+    spec=dict(revision='nmd-c02-training-recertification-1',config=CONFIG,tolerances=TOLS,
+        limits=dict(attempts=48,completions=48,forward=256,backward=64,candidates=1024,worker_seconds=90,total_seconds=600),
+        fixture='61 regular bins per synthetic subject; A=55+.8i, B=180+1.5i; bin10 unobserved causal ffill; role train/assessment; select full decoder starts48,49 per subject',
+        fixture_policy='Build once with current production builders in R0; serialize owned datasets and reuse identical tensors/windows in every fit worker. Candidate construction calls counted cumulatively in R0/serialization, not recounted for deserialization.',
+        oracle_tolerance=dict(atol=1e-5,rtol=1e-5),identities='exact',
+        pairs=['CPU_U-CPU_PR','CUDA_C1-CUDA_C2','CUDA_C1-CUDA_C3','CUDA_C2-CUDA_C3','CUDA_C1-CUDA_PR','CUDA_C2-CUDA_PR','CUDA_C3-CUDA_PR'],
+        order=['R0','CPU_U','CPU_P','CPU_R','CPU_compare','CUDA_C1','CUDA_C2','CUDA_C3','CUDA_P','CUDA_R','CUDA_compare',
+               'CPU_N_input','CPU_N_target','CPU_N_gradient','CUDA_N_input','CUDA_N_target','CUDA_N_gradient','serialization'],
+        expected_refusals=['unknown/no-observed subjects','grid/mask errors','incompatible callback state','compatibility before deserialize','input NaN','target Inf','gradient NaN'],
+        allowed_warning='upsample_linear1d_backward_out_cuda',
+        source_hashes={p:sha(ROOT/p) for p in SOURCES},head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        branch=subprocess.check_output(['git','branch','--show-current'],text=True).strip(),
+        initial_status=subprocess.check_output(['git','status','--short'],text=True),
+        cuda_preflight=preflight)
+    save(root/'preregistration.json',spec);save(meta/'preregistration.json',spec)
+    save(root/'ledger.json',dict(attempts=0,completions=0,forward=0,backward=0,candidates=0))
+    began=time.monotonic();invocations=[];status='PASS'
+    env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',
+             MPLCONFIGDIR=str(root/'mpl'),TMPDIR=str(root),CUBLAS_WORKSPACE_CONFIG=':4096:8')
+    for name in spec['order']:
+        remaining=600-(time.monotonic()-began)
+        if remaining<=0:status='TIMEOUT';break
+        out=root/name;out.mkdir()
+        command=[str(ROOT/'.venv/bin/python'),str(Path(__file__).resolve()),'--worker',name,'--root',str(root)]
+        start=time.monotonic()
+        with (out/'console.log').open('w') as stream:
+            child=subprocess.Popen(command,cwd=ROOT,env=env,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+            try:code=child.wait(timeout=min(90,remaining))
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid,signal.SIGKILL);code=child.wait();status='TIMEOUT'
+        invocations.append(dict(name=name,command=command,exit_code=code,seconds=time.monotonic()-start))
+        save(root/'invocations.json',invocations);save(meta/'invocations.json',invocations)
+        print(name,code,flush=True)
+        if code:
+            status='BLOCKED' if code==3 else status if status=='TIMEOUT' else 'FAIL'
+            break
+    ledger=json.loads((root/'ledger.json').read_text())
+    result=dict(verdict=status,invocations=invocations,counters=ledger,seconds=time.monotonic()-began,
+        preregistration_sha256=sha(root/'preregistration.json'),root=str(root),completed=len(invocations)==len(spec['order']))
+    if status=='PASS' and ledger['attempts']!=48:result['verdict']='FAIL'
+    save(root/'result.json',result);save(meta/'result.json',result)
+    for invocation in invocations:
+        f=root/invocation['name']/'result.json'
+        if f.exists():save(meta/(invocation['name']+'.json'),json.loads(f.read_text()))
+    print(json.dumps(result,indent=2));return 0 if result['verdict']=='PASS' else 1
+
+
+def worker(root,name):
+    out=root/name
+    counters=root/'ledger.json'
+    spec=json.loads((root/'preregistration.json').read_text())
+    events=[];checks=[]
+    def deny(label):
+        events.append(label);save(out/'guards.json',events);raise PermissionError(label)
+    def audit(event,args):
+        if event=='import' and args[0].split('.')[0]=='optuna':deny('Optuna')
+        if event=='open' and isinstance(args[0],(str,bytes,os.PathLike)):
+            p=Path(os.fsdecode(args[0])).resolve()
+            if p.is_relative_to(root):return
+            if p.is_relative_to(ROOT/'ml/data') or p.is_relative_to(ROOT/'ml/models'):deny('real/historical artifact open')
+            if p.suffix.lower() in ('.parquet','.csv','.xml','.pt','.ckpt','.npz','.npy') and not p.is_relative_to(ROOT/'.venv'):deny('unowned data artifact')
+            mode,flags=args[1],args[2]
+            if (isinstance(mode,str) and any(c in mode for c in 'wax+')) or (isinstance(flags,int) and flags&(os.O_WRONLY|os.O_RDWR)):
+                if str(p)!='/dev/null':deny('write outside campaign')
+    sys.addaudithook(audit)
+    sys.path.insert(0,str(ROOT))
+    report=dict(name=name,status='ERROR',checks=checks)
+    try:
+        for path,expected in spec['source_hashes'].items():assert sha(ROOT/path)==expected,'source drift '+path
+        import random
+        import warnings
+        import numpy as np
+        import pandas as pd
+        import torch
+        import lightning.pytorch as pl
+        import pytorch_forecasting as pf
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from ml.scripts import train_tft_population_v2 as p
+        from ml.scripts import baseline_training as b
+        from ml.scripts import checkpoint_registry as r
+        from ml.scripts import numerical_profile as n
+        from ml.scripts import observed_windows as ow
+        from ml.scripts.finite_training import gradient_norm,require_finite
+        from ml.scripts.diagnostics.callback_restore import observe_restore,snapshot,same
+        def blocked(*a,**k):deny('forbidden entrypoint')
+        for entry in ('main','evaluate','load_and_preprocess_data','load_test_data','train_experimental_legacy'):setattr(p,entry,blocked)
+        def count(key,amount=1):
+            data=json.loads(counters.read_text());assert data[key]+amount<=spec['limits'][key], 'budget '+key
+            data[key]+=amount;save(counters,data)
+        def cpu(x):
+            if isinstance(x,torch.Tensor):return x.detach().cpu().clone()
+            if isinstance(x,np.ndarray):return x.copy()
+            if isinstance(x,dict):return {k:cpu(v) for k,v in x.items()}
+            if isinstance(x,list):return [cpu(v) for v in x]
+            if isinstance(x,tuple):return tuple(cpu(v) for v in x)
+            return copy.deepcopy(x)
+        def exact(a,z,label):assert same(cpu(a),cpu(z)),label
+        def check(label,fn):
+            try:fn()
+            except Exception:
+                checks.append(dict(name=label,status='FAIL',traceback=traceback.format_exc()));save(out/'checks.json',checks);raise
+            checks.append(dict(name=label,status='PASS'));save(out/'checks.json',checks)
+        def close(a,z):np.testing.assert_allclose(cpu(a),cpu(z),atol=1e-5,rtol=1e-5)
+        def reject(fn,text=''):
+            try:fn()
+            except (ValueError,RuntimeError,KeyError) as ex:
+                assert text in str(ex),(text,str(ex));return
+            raise AssertionError('expected refusal '+text)
+        def rng():return cpu(dict(python=random.getstate(),numpy=np.random.get_state(),torch=torch.get_rng_state(),cuda=torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []))
+        def state(t,m):return cpu(dict(model=m.state_dict(),optimizer=t.optimizers[0].state_dict(),scheduler=t.lr_scheduler_configs[0].scheduler.state_dict(),
+            rng=rng(),callbacks={c.state_key:c.state_dict() for c in t.callbacks if c.state_dict()},global_step=t.global_step,epoch=t.current_epoch))
+        def differences(a,z,tol):
+            a=torch.as_tensor(a).cpu().double();z=torch.as_tensor(z).cpu().double();assert a.shape==z.shape
+            require_finite(a,'comparison');require_finite(z,'comparison');delta=(a-z).abs();lim=tol[0]+tol[1]*torch.maximum(a.abs(),z.abs())
+            return dict(exceedances=int((delta>lim).sum()),max_abs=float(delta.max()) if delta.numel() else 0.,
+                max_normalized=float((delta/lim).max()) if delta.numel() and any(tol) else None,
+                worst_flat_index=int(delta.flatten().argmax()) if delta.numel() else None,exact=torch.equal(a,z))
+        original_filter=p.filter_observed_windows
+        def counted_filter(ds,frame):count('candidates',len(ds.decoded_index));return original_filter(ds,frame)
+        p.filter_observed_windows=counted_filter
+        torch.set_num_threads(1);pl.seed_everything(42,workers=True)
+        device='cuda' if name.startswith('CUDA') else 'cpu';n.configure(device)
+        report['environment']=dict(python=sys.version,torch=torch.__version__,lightning=pl.__version__,pf=pf.__version__,numpy=np.__version__,pandas=pd.__version__,
+            cuda=torch.version.cuda,cudnn=torch.backends.cudnn.version(),cuda_available=torch.cuda.is_available(),
+            gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,profile=n.verify(device))
+        save(out/'environment.json',report['environment'])
+        assert (torch.__version__,pl.__version__,pf.__version__,np.__version__,pd.__version__)==('2.11.0+cu130','2.6.1','1.7.0','2.4.4','2.3.3'),'stack drift'
+        if device=='cuda' and not torch.cuda.is_available():report['status']='BLOCKED';return 3
+        for forbidden in ('ml/data/raw/forbidden.xml','ml/data/processed/forbidden.parquet','ml/models/foreign.ckpt'):
+            try:open(ROOT/forbidden,'rb');raise AssertionError('guard failed')
+            except PermissionError:pass
+        args=SimpleNamespace(**CONFIG,no_gpu=device=='cpu',mode='fresh',run_id=None,parent_run_id=None,stop_after_epoch=None,registry_dir=root/'owned')
+        if name=='R0':
+            return r0(root,out,report,check,close,reject,exact,cpu,differences,count,args,p,b,r,ow,n,np,pd,torch,pl,pf,patch,SimpleNamespace)
+        fixture=torch.load(root/'R0/fixture.pt',weights_only=False,map_location='cpu')
+        training,validation=fixture['training'],fixture['validation'];args.dataset_sha256=sha(root/'R0/fixture.json')
+        assert len(training)==len(validation)==4
+        if name.endswith('_compare'):
+            return compare(root,out,name,report,cpu,exact,differences,torch)
+        if name=='serialization':
+            return serialization(root,out,report,fixture,args,p,b,r,cpu,exact,close,count,torch,pf)
+        injection=name.split('_N_')[-1] if '_N_' in name else None
+        parent_payload=None;checkpoint=None;reg=r.Registry(args.registry_dir);expected=r.contract(training,args,p.QUANTILES)
+        if name.endswith('_P'):args.stop_after_epoch=1
+        if name.endswith('_R'):
+            args.mode='resume-last';prior=json.loads((root/(device.upper()+'_P')/'result.json').read_text());args.run_id=prior['run_id']
+            checkpoint,parent_payload,record=reg.verified(args.run_id,'last',expected);report['parent_record']=record
+        model=p.build_model(training,args,checkpoint)
+        raw={'initial':cpu(model.state_dict()),'initial_parameters':cpu(dict(model.named_parameters()))}
+        report.update(contract=expected,fixture_sha256=args.dataset_sha256,trace=[],validation=[])
+        original_forward=model.forward
+        def forward(*a,**kw):count('forward');n.verify(device);return original_forward(*a,**kw)
+        model.forward=forward
+        if injection=='gradient':next(model.parameters()).register_hook(lambda g:torch.full_like(g,float('nan')))
+        class Trace(pl.Callback):
+            def on_train_start(self,t,m):
+                n.verify(device);raw['start']=state(t,m)
+                if parent_payload is not None:
+                    saved_rng=next(v for k,v in parent_payload['callbacks'].items() if 'BoundaryRNG' in k)
+                    exact(raw['start']['model'],parent_payload['state_dict'],'restore model')
+                    exact(raw['start']['optimizer'],parent_payload['optimizer_states'][0],'restore optimizer')
+                    exact(raw['start']['scheduler'],parent_payload['lr_schedulers'][0],'restore scheduler')
+                    exact(raw['start']['rng'],{k:saved_rng[k] for k in ('python','numpy','torch','cuda')},'restore RNG')
+                    exact(raw['start']['callbacks'],parent_payload['callbacks'],'restore callbacks/generators')
+                    assert t.global_step==parent_payload['global_step'] and t.current_epoch==parent_payload['epoch']
+                    report['restore']=snapshot(t,parent_payload,restore_calls);assert report['restore']['pass'],'native restore'
+                    save(out/'restore.json',report['restore'])
+            def on_train_batch_start(self,t,m,batch,i):
+                x,y=batch;n.verify(device)
+                row=dict(step=t.global_step,epoch=t.current_epoch,ids={k:cpu(x[k]).tolist() for k in ('groups','decoder_time_idx','encoder_lengths','decoder_lengths')},batch_hash=r.digest(r.semantic({**x,'target':y[0]})))
+                report['trace'].append(row);raw.setdefault('batch_rng',[]).append(rng())
+                if parent_payload is not None and len(report['trace'])==1:
+                    assert t.current_epoch==parent_payload['nmd_checkpoint']['next_epoch']
+                    exact(raw['start']['rng'],raw['batch_rng'][0],'RNG before resumed forward')
+                if injection=='input':x['encoder_cont'][0,0,0]=float('nan')
+                if injection=='target':
+                    y[0][0,0]=float('inf')
+                    report['target_injection']=dict(target_inf=bool(torch.isposinf(y[0][0,0])),
+                        input_target_inf=bool(torch.isposinf(x['decoder_target'][0,0])),
+                        same_storage=y[0].data_ptr()==x['decoder_target'].data_ptr())
+                    assert report['target_injection']['target_inf']
+                    save(out/'injection.json',report['target_injection'])
+            def on_before_backward(self,t,m,loss):
+                if spec.get('revision')=='nmd-c02-zero-update-supplement-1' and injection!='gradient':
+                    report['containment_first']=True;raise RuntimeError('supplement forbids non-gradient backward')
+                count('backward');n.verify(device);report['trace'][-1]['loss']=float(loss.detach())
+            def on_before_optimizer_step(self,t,m,op):
+                if any(not torch.isfinite(v.grad).all() for v in m.parameters() if v.grad is not None):
+                    report['containment_first']=True;raise RuntimeError('audit containment caught gradient')
+                report['trace'][-1]['pre_clip']=float(gradient_norm(m.parameters()))
+            def on_validation_end(self,t,m):
+                if not t.sanity_checking:report['validation'].append(dict(epoch=t.current_epoch,step=t.global_step,value=float(t.callback_metrics['val_loss'])))
+        original_step=torch.optim.AdamW.step
+        attempts_before=json.loads(counters.read_text())['attempts']
+        def step(op,*a,**kw):
+            if injection:
+                data=json.loads(counters.read_text());data['attempts']+=1;save(counters,data)
+                report['containment_first']=True
+                raise RuntimeError('audit containment: base AdamW forbidden')
+            count('attempts')
+            assert json.loads(counters.read_text())['attempts']-attempts_before <= (0 if injection else 4 if name.endswith(('_P','_R')) else 8),'per-worker optimizer budget'
+            row=report['trace'][-1];row['post_clip']=float(gradient_norm(model.parameters()));row['lr']=[g['lr'] for g in op.param_groups]
+            result=original_step(op,*a,**kw);count('completions');return result
+        with warnings.catch_warnings(record=True) as caught,observe_restore() as restore_calls,patch.object(torch.optim.AdamW,'step',step):
+            warnings.simplefilter('always')
+            try:
+                trainer=p.train(model,training,validation,args,checkpoint,extra_callbacks=[Trace()])
+                assert not injection,'negative probe unexpectedly succeeded'
+                raw['final']=state(trainer,model);raw['parameters']=cpu(dict(model.named_parameters()));raw['buffers']=cpu(dict(model.named_buffers()))
+            except FloatingPointError as ex:
+                assert injection and not report.get('containment_first'),str(ex)
+                frames=traceback.extract_tb(ex.__traceback__)
+                production=ROOT/'ml/scripts/finite_training.py'
+                assert Path(frames[-1].filename).resolve()==production and frames[-1].name=='require_finite','not a production finite gate'
+                allowed={'input':{'Nonfinite state: model input'},
+                         'target':{'Nonfinite state: target','Nonfinite state: valid target','Nonfinite state: model input'},
+                         'gradient':{'Nonfinite state: gradient'}}[injection]
+                assert str(ex) in allowed,str(ex)
+                if injection=='target':
+                    assert report['target_injection']['target_inf']
+                    if str(ex)=='Nonfinite state: model input':
+                        assert report['target_injection']['input_target_inf']
+                        assert any(Path(f.filename).resolve()==production and f.name=='forward' for f in frames)
+                assert json.loads(counters.read_text())['attempts']==attempts_before
+                report['production_failure']=dict(type=type(ex).__name__,message=str(ex),
+                    frames=[dict(file=f.filename,line=f.lineno,function=f.name) for f in frames])
+                report['expected_error']=str(ex)
+        report['warnings']=[str(w.message) for w in caught]
+        for message in report['warnings']:
+            if 'deterministic' in message.lower() and 'implementation' in message.lower():assert 'upsample_linear1d_backward_out_cuda' in message,message
+        report['run_id']=model._nmd_run_id;report['registry']=reg.manifest(model._nmd_run_id)
+        report['attempts']=json.loads(counters.read_text())['attempts']-attempts_before
+        assert report['attempts']==(0 if injection else 4 if name.endswith(('_P','_R')) else 8)
+        if injection:assert report['registry']['best'] is None and report['registry']['last'] is None
+        torch.save(raw,out/'raw.pt');report['raw_sha256']=sha(out/'raw.pt');report['status']='PASS'
+        return 0
+    except Exception:
+        report.update(status='FAIL',traceback=traceback.format_exc());return 1
+    finally:
+        report['counters']=json.loads(counters.read_text());save(out/'result.json',report)
+
+
+def r0(root,out,report,check,close,reject,exact,cpu,differences,count,args,p,b,r,ow,n,np,pd,torch,pl,pf,patch,NS):
+    def forbidden(*a,**kw):raise AssertionError('R0 forbids fit/backward/optimizer')
+    pl.Trainer.fit=forbidden;torch.optim.AdamW.step=forbidden;torch.Tensor.backward=forbidden
+    def frame(role,size=61):
+        rows=[]
+        for sid,base,slope in [('synthetic_A',55.,.8),('synthetic_B',180.,1.5)]:
+            for i in range(size):
+                row={col:float(i%7/7) for col in sorted(set(p.TIME_VARYING_KNOWN_REALS+p.TIME_VARYING_UNKNOWN_REALS))}
+                row.update({f'glucose_lag_{lag}_available':1. for lag in (1,2,3,6,12,24)})
+                row.update(subject_id=sid,time_idx=i,timestamp=pd.Timestamp('2024-01-01')+pd.Timedelta(minutes=5*i),source_split=role,
+                           target_observed=i!=10,glucose_mg_dl=base+slope*(9 if i==10 else i))
+                rows.append(row)
+        return pd.DataFrame(rows)
+    train=frame('synthetic_train');val=frame('synthetic_assessment')
+    (out/'fixture.json').write_text(json.dumps({'train':train.to_json(orient='table',date_format='iso'),'validation':val.to_json(orient='table',date_format='iso')},sort_keys=True))
+    args.dataset_sha256=sha(out/'fixture.json')
+    report['effective_fixture_config']=vars(args).copy()
+    report['effective_fixture_config']['registry_dir']=str(args.registry_dir)
+    training,validation=p.build_datasets(train,val,args)
+    def full(d):return (d.time_idx_first_prediction-d.time_idx_first==48)&(d.time_idx_last-d.time_idx_first_prediction==11)&d.time_idx_first_prediction.isin([48,49])
+    training=training.filter(full);validation=validation.filter(full)
+    assert len(training)==len(validation)==4
+    report['window_keys']={'train':training.decoded_index.to_dict(orient='records'),'validation':validation.decoded_index.to_dict(orient='records')}
+    report['window_hash']=r.digest(report['window_keys']);report['fixture_sha256']=args.dataset_sha256
+    torch.save(dict(training=training,validation=validation,train_frame=train,val_frame=val),out/'fixture.pt')
+    report['dataset_artifact_sha256']=sha(out/'fixture.pt')
+    def inheritance():
+        historical=json.loads((ROOT/'experiments/stage_c_remediation_20260914/execution_summary.json').read_text())
+        matched={f:sha(ROOT/f)==expected for f,expected in historical['source_hashes'].items() if f.startswith('ml/scripts/') or f.startswith('configs/')}
+        assert all(matched.values()),matched
+        audit=json.loads((ROOT/'experiments/stage_c_synthetic_20260914/static_source_hashes.json').read_text())
+        unchanged={f:sha(ROOT/f)==audit[f] for f in ('ml/scripts/observed_windows.py','ml/scripts/finite_training.py','ml/scripts/numerical_profile.py') if f in audit}
+        assert all(unchanged.values())
+        report['inheritance']={'C_mechanical':matched,'unchanged_components':unchanged,'A_B_trajectory':'NOT inherited after C02','canonical_data':'inherited metadata only, not opened'}
+    check('R0_inheritance',inheritance)
+    def normalizer():
+        for ds,source in ((training,train),(validation,val)):
+            x,y=next(iter(ds.to_dataloader(train=False,batch_size=4,num_workers=0,shuffle=False)))
+            idx=ds.x_to_index(x);scales=[]
+            for j,row in enumerate(idx.itertuples(index=False)):
+                observed=train[(train.subject_id==row.subject_id)&train.target_observed].glucose_mg_dl.to_numpy()
+                values=np.log(observed);wanted=[values.mean(),values.std(ddof=1)+np.finfo(np.float16).eps];scales.append(wanted)
+                enc=source[(source.subject_id==row.subject_id)&source.time_idx.between(row.time_idx-48,row.time_idx-1)].glucose_mg_dl.to_numpy()
+                close(x['encoder_cont'][j,:,ds.reals.index('glucose_mg_dl')],(np.log(enc)-wanted[0])/wanted[1])
+                close(y[0][j],source[(source.subject_id==row.subject_id)&source.time_idx.between(row.time_idx,row.time_idx+11)].glucose_mg_dl.to_numpy())
+                encoded=ds.target_normalizer.nmd_subject_mapping[row.subject_id]
+                close(ds.target_normalizer.get_parameters([encoded]),wanted)
+            close(x['target_scale'],scales)
+            norm=ds.target_normalizer;original=copy.deepcopy(norm.missing_);norm.missing_={k:float('nan') for k in original}
+            try:close(next(iter(ds.to_dataloader(train=False,batch_size=4,num_workers=0,shuffle=False)))[0]['target_scale'],scales)
+            finally:norm.missing_=original
+        report['normalizer']=r.semantic(training.target_normalizer)
+    check('R0_C02_actual_tensors_no_fallback',normalizer)
+    def sentinels():
+        small=frame('synthetic_train',34)
+        first=p.create_time_series_dataset(small)
+        altered=small.copy();altered.loc[~altered.target_observed,'glucose_mg_dl']=9999.
+        second=p.create_time_series_dataset(altered)
+        exact(r.semantic(first.target_normalizer),r.semantic(second.target_normalizer),'unobserved sentinel')
+        saved=r.semantic(training.target_normalizer);altered=val.copy();altered.glucose_mg_dl*=3
+        other=p.create_time_series_dataset(altered,reference_dataset=training)
+        exact(r.semantic(other.target_normalizer),saved,'assessment sentinel')
+        renamed=small.copy();renamed.subject_id=renamed.subject_id.map({'synthetic_A':'zeta','synthetic_B':'alpha'})
+        third=p.create_time_series_dataset(renamed.iloc[::-1])
+        for before,after in [('synthetic_A','zeta'),('synthetic_B','alpha')]:
+            close(first.target_normalizer.get_parameters([first.target_normalizer.nmd_subject_mapping[before]]),third.target_normalizer.get_parameters([third.target_normalizer.nmd_subject_mapping[after]]))
+        unknown=val[val.subject_id=='synthetic_A'].copy();unknown.subject_id='unknown'
+        reject(lambda:p.create_time_series_dataset(unknown,reference_dataset=training),'unseen')
+        empty=small.copy();empty.loc[empty.subject_id=='synthetic_A','target_observed']=False
+        reject(lambda:p.create_time_series_dataset(empty),'observed training')
+    check('R0_C02_sentinels_rename_refusals',sentinels)
+    def grids():
+        keep,_=ow.window_validity(val,validation.decoded_index);assert keep.all()
+        bad=val.copy();bad.loc[bad.time_idx==59,'target_observed']=False
+        keep,_=ow.window_validity(bad,validation.decoded_index);assert not keep.any()
+        bad=val.copy();bad.loc[bad.time_idx==20,'timestamp']+=pd.Timedelta(hours=2)
+        reject(lambda:ow.validate_dense_frame(bad),'five-minute')
+        bad=val.copy();bad.loc[bad.time_idx==10,'glucose_mg_dl']=np.nan
+        keep,_=ow.window_validity(bad,validation.decoded_index);assert not keep.any()
+        from ml.scripts.temporal_protocol import regular_timeline
+        sparse=val[(val.subject_id=='synthetic_A')&val.time_idx.isin([0,60])]
+        dense=regular_timeline(sparse);assert len(dense)==61 and not dense.target_observed.iloc[1:60].any()
+        assert set(validation.decoded_index.subject_id)=={'synthetic_A','synthetic_B'}
+    check('R0_A_grid_masks_keys',grids)
+    def callbacks():
+        from lightning.pytorch.callbacks import ModelCheckpoint
+        cb=b.BoundaryCheckpoint(NS(root=out),'same',{});cb.current_score=torch.tensor(2.);cb.best_model_score=torch.tensor(1.)
+        cb.best_model_path=str(out/'same/best.ckpt');cb.best_k_models={cb.best_model_path:torch.tensor(1.)};cb.kth_best_model_path=cb.best_model_path;cb.kth_value=torch.tensor(1.);cb.last_model_path=''
+        saved=cb.state_dict();assert len(saved)==9
+        new=b.BoundaryCheckpoint(NS(root=out),'same',{});native=ModelCheckpoint.load_state_dict
+        with patch.object(ModelCheckpoint,'load_state_dict',autospec=True,side_effect=native) as spy:new.load_state_dict(saved);spy.assert_called_once_with(new,saved)
+        exact(new.state_dict(),saved,'nine callback fields')
+        for field in ('monitor','dirpath','current_score'):
+            bad=copy.deepcopy(saved)
+            if field=='current_score':del bad[field]
+            else:bad[field]='wrong'
+            reject(lambda:new.load_state_dict(bad))
+        exact(cpu({'x':torch.tensor([1.,2.])}),{'x':torch.tensor([1.,2.])},'comparator positive')
+        try:exact({'x':torch.tensor([1.,2.])},{'x':torch.tensor([1.,3.])},'negative')
+        except AssertionError:pass
+        else:raise AssertionError('comparator failed')
+        assert differences([0.,1.],[1e-7,1+1e-5],TOLS['parameters'])['exceedances']==0
+        assert differences([0.,1.],[2e-6,1.],TOLS['parameters'])['exceedances']==1
+        report['callback_fields']=list(saved)
+    check('R0_callbacks_comparator',callbacks)
+    def algebra():
+        target=torch.tensor([[50.,70.,100.]],dtype=torch.float64);prediction=torch.tensor([[[60.]*7,[80.]*7,[80.]*7]],dtype=torch.float64)
+        u=target.numpy()[:,:,None]-prediction.numpy();wanted=2*np.mean(u*(np.asarray(p.QUANTILES)-(u<0)),axis=-1)*np.where(target.numpy()<70,2.5,1)
+        metric=p.ClinicalQuantileLoss(quantiles=p.QUANTILES);close(metric.loss(prediction,target),wanted)
+        metric=p.ClinicalQuantileLoss(quantiles=p.QUANTILES);losses=torch.tensor([[10.]*12,[30.]*12]);lengths=torch.tensor([12,3])
+        metric._update_losses_and_lengths(losses,lengths);close(metric.compute(),14.)
+        model=p.build_model(training,args,None);model.trainer=NS(max_epochs=4,estimated_stepping_batches=8)
+        configured=model.configure_optimizers();scheduler=configured['lr_scheduler']['scheduler'];f=scheduler._schedulers[0].lr_lambdas[0]
+        close([args.lr*f(i) for i in range(8)],[args.lr*i/50 for i in range(8)])
+        assert configured['optimizer'].param_groups[0]['lr']==0
+        assert list(model.loss.quantiles)==p.QUANTILES
+    check('R0_loss_lengths_LR_no_updates',algebra)
+    def compatibility():
+        expected=r.contract(training,args,p.QUANTILES);reg=r.Registry(out/'negative_owned');run=reg.create(expected)
+        for key in ('protocol','normalizer_revision','normalizer','schema','quantiles','numerical_profile','code_sha256'):
+            bad=copy.deepcopy(expected);bad[key]='mismatch'
+            for mode in ('last','weights_only'):
+                with patch.object(torch,'load',side_effect=AssertionError('unexpected deserialize')):
+                    reject(lambda:reg.verified(run,mode,bad),'compatibility')
+        with patch.object(torch,'load',side_effect=AssertionError('unexpected deserialize')):
+            reject(lambda:reg.verified('foreign','best',expected),'unknown')
+            reject(lambda:reg.verified(run,'best',expected),'No valid')
+            reject(lambda:reg.verified(run,'other',expected),'role')
+        # Negative owned manifests only, never represented as real trained states.
+        manifest=reg.manifest(run)
+        record=dict(file='negative.bin',sha256='0'*64,status='valid',boundary_complete=True,terminated=False,global_step=4,val_loss=1.,
+            metadata=dict(kind='epoch-boundary',boundary_complete=True,terminated=False,global_step=4,val_loss=1.))
+        manifest['best']=record;r.atomic_json(reg.root/run/'run.json',manifest)
+        for content in (None,b'corrupt owned negative bytes'):
+            if content is not None:(reg.root/run/'negative.bin').write_bytes(content)
+            with patch.object(torch,'load',side_effect=AssertionError('unexpected deserialize')):
+                reject(lambda:reg.verified(run,'best',expected),'hash/ownership')
+        record['metadata']['kind']='weights-only';r.atomic_json(reg.root/run/'run.json',manifest)
+        with patch.object(torch,'load',side_effect=AssertionError('unexpected deserialize')):reject(lambda:reg.verified(run,'best',expected),'role')
+    check('R0_compatibility_before_deserialization',compatibility)
+    report['status']='PASS';return 0
+
+
+def compare(root,out,name,report,cpu,exact,differences,torch):
+    device=name.split('_')[0];fresh=['CPU_U'] if device=='CPU' else ['CUDA_C1','CUDA_C2','CUDA_C3']
+    names=fresh+[device+'_P',device+'_R']
+    reports={n:json.loads((root/n/'result.json').read_text()) for n in names}
+    raws={n:torch.load(root/n/'raw.pt',map_location='cpu',weights_only=False) for n in names}
+    prefix=device+'_';reports[prefix+'PR']={**reports[prefix+'R'],'trace':reports[prefix+'P']['trace']+reports[prefix+'R']['trace'],
+        'validation':reports[prefix+'P']['validation']+reports[prefix+'R']['validation']}
+    raws[prefix+'PR']={**raws[prefix+'R'],'initial':raws[prefix+'P']['initial'],'initial_parameters':raws[prefix+'P']['initial_parameters']}
+    import itertools
+    pairs=list(itertools.combinations(fresh,2))+[(n,prefix+'PR') for n in fresh];comparisons={}
+    def normalized(value):
+        if isinstance(value,str) and str(root/'owned') in value:
+            path=Path(value);parts=path.parts;index=parts.index('owned');return '/'.join(('<owned-run>',*parts[index+2:]))
+        if isinstance(value,dict):return {normalized(k):normalized(v) for k,v in value.items()}
+        if isinstance(value,list):return [normalized(v) for v in value]
+        if isinstance(value,tuple):return tuple(normalized(v) for v in value)
+        return value
+    for a,z in pairs:
+        left,right=reports[a],reports[z];x,y=raws[a],raws[z]
+        exact(x['initial'],y['initial'],'initial tensors');assert left['contract']==right['contract'] and left['fixture_sha256']==right['fixture_sha256']
+        assert [{k:t[k] for k in ('step','epoch','ids','batch_hash')} for t in left['trace']]==[{k:t[k] for k in ('step','epoch','ids','batch_hash')} for t in right['trace']]
+        quantities={}
+        for key in ('loss','lr','pre_clip','post_clip'):
+            tol=(0,0) if device=='CPU' else TOLS[key]
+            quantities[key]=differences([t[key] for t in left['trace']],[t[key] for t in right['trace']],tol)
+        quantities['validation']=differences([t['value'] for t in left['validation']],[t['value'] for t in right['validation']],(0,0) if device=='CPU' else TOLS['validation'])
+        quantities['parameters']={k:differences(v,y['parameters'][k],(0,0) if device=='CPU' else TOLS['parameters']) for k,v in x['parameters'].items()}
+        comparisons[a+'-'+z]=quantities
+        if device=='CPU':exact(normalized(x['final']),normalized(y['final']),'CPU complete final semantic state')
+        else:
+            from ml.scripts.finite_training import require_finite
+            require_finite(y['final']['optimizer'],'continued optimizer');require_finite(y['buffers'],'buffers')
+        for key,result in quantities.items():
+            if key=='parameters':assert all(v['exceedances']==0 for v in result.values()),'parameter tolerance'
+            else:assert result['exceedances']==0,key+' tolerance'
+    report.update(status='PASS',comparisons=comparisons);return 0
+
+
+def serialization(root,out,report,fixture,args,p,b,r,cpu,exact,close,count,torch,pf):
+    training=fixture['training'];validation=fixture['validation'];reg=r.Registry(root/'owned');evidence={}
+    for name in ('CPU_U','CUDA_C1'):
+        original=json.loads((root/name/'result.json').read_text());run_id=original['run_id'];expected=original['contract']
+        path,payload,record=reg.verified(run_id,'best',expected)
+        oracle=min(original['validation'],key=lambda row:(row['value'],row['step']))
+        assert record['global_step']==oracle['step'] and record['val_loss']==oracle['value']
+        model=p.ClinicalTFT.load_from_checkpoint(path,map_location='cpu',weights_only=False)
+        exact(model.state_dict(),payload['state_dict'],'BEST tensors')
+        exact(r.semantic(model.output_transformer),r.semantic(training.target_normalizer),'BEST normalizer')
+        assert list(model.loss.quantiles)==p.QUANTILES
+        rebuilt=pf.TimeSeriesDataSet.from_parameters(payload['dataset_parameters'],fixture['val_frame'],stop_randomization=True)
+        count('candidates',len(rebuilt.decoded_index))
+        rebuilt=rebuilt.filter(lambda d:(d.time_idx_first_prediction-d.time_idx_first==48)&(d.time_idx_last-d.time_idx_first_prediction==11)&d.time_idx_first_prediction.isin([48,49]))
+        x,_=next(iter(rebuilt.to_dataloader(train=False,batch_size=4,num_workers=0,shuffle=False)))
+        reference,_=next(iter(validation.to_dataloader(train=False,batch_size=4,num_workers=0,shuffle=False)))
+        close(x['encoder_cont'],reference['encoder_cont']);close(x['target_scale'],reference['target_scale'])
+        reg.export_weights(run_id,expected);_,weights,weight_record=reg.verified(run_id,'weights_only',expected)
+        exact(weights['state_dict'],payload['state_dict'],'weights-only tensors')
+        child=reg.create(expected,mode='weights-only',parent={'run_id':run_id,'checkpoint_sha256':weight_record['sha256']})
+        assert child!=run_id and reg.manifest(child)['lineage']['mode']=='weights-only'
+        interrupted=json.loads((root/(name.split('_')[0]+'_P')/'result.json').read_text())
+        interrupted_record=interrupted['registry']['last'];assert interrupted_record['boundary_complete'] and not interrupted_record['terminated'] and interrupted_record['global_step']==4
+        evidence[name]=dict(best_sha256=record['sha256'],best_step=record['global_step'],weights_sha256=weight_record['sha256'],new_optimization_run=child)
+    report.update(status='PASS',serialization=evidence);return 0
+
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('--preflight',action='store_true');parser.add_argument('--worker');parser.add_argument('--root',type=Path)
+    options=parser.parse_args()
+    raise SystemExit(gpu_preflight(options.root.resolve()) if options.preflight else worker(options.root.resolve(),options.worker) if options.worker else parent())

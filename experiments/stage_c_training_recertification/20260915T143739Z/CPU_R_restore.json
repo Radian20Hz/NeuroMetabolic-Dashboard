@@ -1,0 +1,66 @@
+{
+  "state_keys_equal": true,
+  "fields": {
+    "BoundaryRNG": {
+      "python": true,
+      "numpy": true,
+      "torch": true,
+      "cuda": true,
+      "train_generator": true,
+      "val_generator": true
+    },
+    "EarlyStopping{'monitor': 'val_loss', 'mode': 'min'}": {
+      "wait_count": true,
+      "stopped_epoch": true,
+      "best_score": true,
+      "patience": true,
+      "stopping_reason": true,
+      "stopping_reason_message": true
+    },
+    "GradientNormLogger": {
+      "high_grad_consecutive": true,
+      "clip_val": true,
+      "warmup_steps": true
+    },
+    "BoundaryCheckpoint{'monitor': 'val_loss', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}": {
+      "monitor": true,
+      "best_model_score": true,
+      "best_model_path": true,
+      "current_score": true,
+      "dirpath": true,
+      "best_k_models": true,
+      "kth_best_model_path": true,
+      "kth_value": true,
+      "last_model_path": true
+    }
+  },
+  "same_restored_instance": true,
+  "native_dispatch": true,
+  "restore_calls": [
+    {
+      "instance_id": 139770078770384,
+      "state_key": "BoundaryCheckpoint{'monitor': 'val_loss', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}",
+      "native_dispatch": true,
+      "fields": {
+        "monitor": true,
+        "best_model_score": true,
+        "best_model_path": true,
+        "current_score": true,
+        "dirpath": true,
+        "best_k_models": true,
+        "kth_best_model_path": true,
+        "kth_value": true,
+        "last_model_path": true
+      }
+    }
+  ],
+  "checkpoint_config": {
+    "dirpath": "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z/owned/f0e2cc2a92e44ab18284bbfbf7b595f1",
+    "monitor": "val_loss",
+    "mode": "min",
+    "save_top_k": -1,
+    "save_last": false,
+    "_save_on_train_epoch_end": false
+  },
+  "pass": true
+}

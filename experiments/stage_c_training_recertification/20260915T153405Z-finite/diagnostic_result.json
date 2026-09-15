@@ -1,0 +1,39 @@
+{
+  "name": "diagnostic",
+  "status": "PASS",
+  "environment": {
+    "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+    "torch": "2.11.0+cu130",
+    "lightning": "2.6.1",
+    "pf": "1.7.0",
+    "numpy": "2.4.4",
+    "pandas": "2.3.3",
+    "cuda": "13.0",
+    "cudnn": 91900,
+    "profile": {
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    }
+  },
+  "phase_a_explained": true,
+  "containment_event_seen": true,
+  "containment_uncaught_rejection": false,
+  "containment_was_first_uncaught_rejection_after_injection": false,
+  "counters": {
+    "attempts": 0,
+    "completions": 0,
+    "forward": 0,
+    "backward": 0,
+    "candidates": 0
+  }
+}

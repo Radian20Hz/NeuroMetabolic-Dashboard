@@ -1,0 +1,93 @@
+{
+  "verdict": "ERROR / INCOMPLETE",
+  "phase": "parent preflight, before preregistration",
+  "invocation": [
+    "python3",
+    "ml/tests/stage_c_recertification/campaign.py"
+  ],
+  "parent_exit_code": 1,
+  "failing_subprocess": [
+    "nvidia-smi",
+    "--query-gpu=name,driver_version,memory.total",
+    "--format=csv,noheader"
+  ],
+  "subprocess_exit_code": 9,
+  "exception": "subprocess.CalledProcessError",
+  "stderr_stdout_detail": "child output captured by check_output; not preserved by parent before exception; underlying reason unestablished",
+  "previous_direct_gpu_probe": {
+    "result": "NVIDIA GeForce RTX 3070, 615.71.09, 8192 MiB",
+    "exit_code": 0,
+    "scope": "prior read-only inventory, not a training worker"
+  },
+  "workers_started": 0,
+  "positive_fit_workers": 0,
+  "negative_fit_workers": 0,
+  "optimizer_attempts": 0,
+  "optimizer_completions": 0,
+  "forward": 0,
+  "backward": 0,
+  "generated_candidates": 0,
+  "preregistration_written": false,
+  "fixture_created": false,
+  "fit_seconds": 0,
+  "parent_tool_wall_seconds": 0.1,
+  "worker_elapsed_seconds": 0,
+  "exact_parent_elapsed_seconds": "not persisted before failure",
+  "retry": false,
+  "production_changes": false,
+  "baseline_config_changes": false,
+  "real_data_access": false,
+  "training_started": false,
+  "head": "2fed05028aaa303ab06362cee96d02c3221fece8",
+  "branch": "research/baseline-audit",
+  "harness_sha256": "a4f0c1138377dafc0fcee830b90cf2a8bf791e8f125ac6212d1a1afc7ee04f8e",
+  "plan_snapshot_hashes": {
+    "docs/STAGE_C_REMEDIATION_REPORT.md": {
+      "expected": "8edd3ed80178daaf26c443ffa427c8528deaa74df54ae1e308b870a510d87017",
+      "actual": "8edd3ed80178daaf26c443ffa427c8528deaa74df54ae1e308b870a510d87017"
+    },
+    "docs/STAGE_C_REMEDIATION_PLAN.md": {
+      "expected": "b6dd6a38a885de02d8e4c8bc11384decb889125d064ce5950817d8ef47986957",
+      "actual": "b6dd6a38a885de02d8e4c8bc11384decb889125d064ce5950817d8ef47986957"
+    },
+    "docs/STAGE_B_FINAL_REVIEW.md": {
+      "expected": "edfaf0307fcd72b069c4849924d67b5a23d6881f5ffc7743b3c4e0f1913e4d20",
+      "actual": "edfaf0307fcd72b069c4849924d67b5a23d6881f5ffc7743b3c4e0f1913e4d20"
+    },
+    "docs/STAGE_B_FINALIZATION_REPORT.md": {
+      "expected": "e04b65e07cc455f87c9e5047aba10d71a4c2644851a381002d1df31dd77e53e4",
+      "actual": "e04b65e07cc455f87c9e5047aba10d71a4c2644851a381002d1df31dd77e53e4"
+    },
+    "configs/baseline_v1_stage_c.json": {
+      "expected": "a85bb26214253a855af066b590565b3b8b45beebb34302e686cc36bc752e1f35",
+      "actual": "a85bb26214253a855af066b590565b3b8b45beebb34302e686cc36bc752e1f35"
+    },
+    "ml/scripts/train_tft_population_v2.py": {
+      "expected": "dcdb6c738d70958a4a105d81c965f4dd17af0db35143ba77d98ba5b639f24572",
+      "actual": "dcdb6c738d70958a4a105d81c965f4dd17af0db35143ba77d98ba5b639f24572"
+    },
+    "ml/scripts/checkpoint_registry.py": {
+      "expected": "cb3b9ca3495faa06ee039c28c2085fb3a9ee1c246f9cdeba766d11707d25df3d",
+      "actual": "cb3b9ca3495faa06ee039c28c2085fb3a9ee1c246f9cdeba766d11707d25df3d"
+    },
+    "ml/scripts/baseline_training.py": {
+      "expected": "0cdef5a6311e3804cda69dfbc936cafb5fa4b560e12e53c71250c0b569018d74",
+      "actual": "0cdef5a6311e3804cda69dfbc936cafb5fa4b560e12e53c71250c0b569018d74"
+    },
+    "ml/scripts/finite_training.py": {
+      "expected": "3e0adea81cd1fdef6fec933213b1c1cb84b5fe8172716c7a69acab78e4abbf6a",
+      "actual": "3e0adea81cd1fdef6fec933213b1c1cb84b5fe8172716c7a69acab78e4abbf6a"
+    },
+    "ml/scripts/numerical_profile.py": {
+      "expected": "5bf981d01877b1900a0c8f0426a5aa27966ec9d6a64ceb9c8639e0306c0e5630",
+      "actual": "5bf981d01877b1900a0c8f0426a5aa27966ec9d6a64ceb9c8639e0306c0e5630"
+    }
+  },
+  "remaining_budget_not_authorized_for_retry": 48,
+  "CPU": "NOT RUN",
+  "CUDA": "NOT RUN",
+  "R0": "NOT RUN",
+  "finite": "NOT RUN",
+  "serialization": "NOT RUN",
+  "NO_PERFORMANCE_EVALUATION": true
+}

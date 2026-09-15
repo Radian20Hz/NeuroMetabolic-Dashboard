@@ -1,0 +1,1 @@
+Phase A captured caught import-time mkdir of existing baseline_v1_stage_a. Acceptance failed overly narrow site-packages condition. No finite probes or optimizer calls. See report and ordered diagnostic events. No retry.

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "diagnostic",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "diagnostic"
+    ],
+    "exit_code": 0,
+    "seconds": 7.222872128000745,
+    "original_unchanged": true
+  },
+  {
+    "name": "CPU_N_target",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "CPU_N_target"
+    ],
+    "exit_code": 0,
+    "seconds": 9.325275872999555,
+    "original_unchanged": true
+  },
+  {
+    "name": "CPU_N_gradient",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "CPU_N_gradient"
+    ],
+    "exit_code": 0,
+    "seconds": 9.72641860099975,
+    "original_unchanged": true
+  },
+  {
+    "name": "CUDA_N_input",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "CUDA_N_input"
+    ],
+    "exit_code": 0,
+    "seconds": 10.279039207999631,
+    "original_unchanged": true
+  },
+  {
+    "name": "CUDA_N_target",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "CUDA_N_target"
+    ],
+    "exit_code": 0,
+    "seconds": 10.278584785000021,
+    "original_unchanged": true
+  },
+  {
+    "name": "CUDA_N_gradient",
+    "command": [
+      "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+      "-B",
+      "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+      "--root",
+      "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T153405Z-finite",
+      "--worker",
+      "CUDA_N_gradient"
+    ],
+    "exit_code": 0,
+    "seconds": 10.476973361000091,
+    "original_unchanged": true
+  }
+]

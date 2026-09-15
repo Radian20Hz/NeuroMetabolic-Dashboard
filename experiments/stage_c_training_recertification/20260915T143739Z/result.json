@@ -1,0 +1,185 @@
+{
+  "verdict": "FAIL",
+  "invocations": [
+    {
+      "name": "R0",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "R0",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 55.98510291799994
+    },
+    {
+      "name": "CPU_U",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_U",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 14.88338667700009
+    },
+    {
+      "name": "CPU_P",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_P",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 6.723310152000067
+    },
+    {
+      "name": "CPU_R",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_R",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 8.5758619180001
+    },
+    {
+      "name": "CPU_compare",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_compare",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 4.970935904999806
+    },
+    {
+      "name": "CUDA_C1",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_C1",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 36.61145842099995
+    },
+    {
+      "name": "CUDA_C2",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_C2",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 20.290846070000043
+    },
+    {
+      "name": "CUDA_C3",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_C3",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 20.290575717000138
+    },
+    {
+      "name": "CUDA_P",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_P",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 12.831102407000344
+    },
+    {
+      "name": "CUDA_R",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_R",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 14.283102798000073
+    },
+    {
+      "name": "CUDA_compare",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CUDA_compare",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 6.122450010000193
+    },
+    {
+      "name": "CPU_N_input",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_N_input",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 4.570297578999998
+    },
+    {
+      "name": "CPU_N_target",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--worker",
+        "CPU_N_target",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 1,
+      "seconds": 4.520154576000095
+    }
+  ],
+  "counters": {
+    "attempts": 48,
+    "completions": 48,
+    "forward": 82,
+    "backward": 48,
+    "candidates": 458
+  },
+  "seconds": 210.73492944600002,
+  "preregistration_sha256": "ffad05facb098dc2e350f407c0d095b9deb6314396700c12e475ae26dc66e9e2",
+  "root": "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z",
+  "completed": false
+}

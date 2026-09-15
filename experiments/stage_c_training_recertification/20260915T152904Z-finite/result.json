@@ -1,0 +1,32 @@
+{
+  "verdict": "FAIL",
+  "invocations": [
+    {
+      "name": "diagnostic",
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "-B",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T152904Z-finite",
+        "--worker",
+        "diagnostic"
+      ],
+      "exit_code": 1,
+      "seconds": 7.1269056860001,
+      "original_unchanged": true
+    }
+  ],
+  "counters": {
+    "attempts": 0,
+    "completions": 0,
+    "forward": 0,
+    "backward": 0,
+    "candidates": 0
+  },
+  "seconds": 7.18736819500009,
+  "original_unchanged": true,
+  "completed": false,
+  "root": "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T152904Z-finite",
+  "preregistration_sha256": "a0c1564589156955a93608f5ad42d0952607e0ce275cfcdd972e5c959c8ebd3e"
+}

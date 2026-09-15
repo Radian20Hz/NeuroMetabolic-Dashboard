@@ -1,0 +1,501 @@
+[
+  {
+    "seq": 1,
+    "monotonic_ns": 5989646243429,
+    "kind": "containment",
+    "audit_event": "os.mkdir",
+    "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+    "operation": "os.mkdir",
+    "stack": [
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 224,
+        "function": "<module>"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 91,
+        "function": "worker"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1434,
+        "function": "_handle_fromlist"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 491,
+        "function": "_call_with_frames_removed"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1371,
+        "function": "_find_and_load"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1342,
+        "function": "_find_and_load_unlocked"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 938,
+        "function": "_load_unlocked"
+      },
+      {
+        "file": "<frozen importlib._bootstrap_external>",
+        "line": 759,
+        "function": "exec_module"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 491,
+        "function": "_call_with_frames_removed"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+        "line": 104,
+        "function": "<module>"
+      },
+      {
+        "file": "/usr/lib/python3.14/pathlib/__init__.py",
+        "line": 1011,
+        "function": "mkdir"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 66,
+        "function": "audit"
+      }
+    ],
+    "injection_seq": null,
+    "existed_directory": true,
+    "immediate_library_call": {
+      "file": "/usr/lib/python3.14/pathlib/__init__.py",
+      "function": "mkdir",
+      "line": 1011
+    },
+    "escaped_immediate_library_call": false,
+    "became_worker_final_uncaught_exception": false,
+    "propagation": [
+      {
+        "file": "/usr/lib/python3.14/pathlib/__init__.py",
+        "function": "mkdir",
+        "line": 1011
+      }
+    ],
+    "classification": "caught existing-directory mkdir attempt"
+  },
+  {
+    "seq": 2,
+    "monotonic_ns": 5993684938625,
+    "kind": "forward",
+    "injection_seq": null
+  },
+  {
+    "seq": 3,
+    "monotonic_ns": 5993686553169,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 4,
+    "monotonic_ns": 5993686565082,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 5,
+    "monotonic_ns": 5993687750619,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 6,
+    "monotonic_ns": 5993694970317,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 7,
+    "monotonic_ns": 5993695108740,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 8,
+    "monotonic_ns": 5993695163224,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 9,
+    "monotonic_ns": 5993695214642,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 10,
+    "monotonic_ns": 5993695293893,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 11,
+    "monotonic_ns": 5993695369487,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 12,
+    "monotonic_ns": 5993695413090,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 13,
+    "monotonic_ns": 5993695462524,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 14,
+    "monotonic_ns": 5993695512469,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 15,
+    "monotonic_ns": 5993997670651,
+    "kind": "require_finite_call",
+    "stage": "transformed prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 16,
+    "monotonic_ns": 5993998283658,
+    "kind": "require_finite_call",
+    "stage": "target",
+    "injection_seq": null
+  },
+  {
+    "seq": 17,
+    "monotonic_ns": 5993998362258,
+    "kind": "require_finite_call",
+    "stage": "prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 18,
+    "monotonic_ns": 5993998441068,
+    "kind": "require_finite_call",
+    "stage": "sample weight",
+    "injection_seq": null
+  },
+  {
+    "seq": 19,
+    "monotonic_ns": 5993998512373,
+    "kind": "require_finite_call",
+    "stage": "target",
+    "injection_seq": null
+  },
+  {
+    "seq": 20,
+    "monotonic_ns": 5993998583098,
+    "kind": "require_finite_call",
+    "stage": "prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 21,
+    "monotonic_ns": 5994012510076,
+    "kind": "require_finite_call",
+    "stage": "clinical per-position loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 22,
+    "monotonic_ns": 5994021930845,
+    "kind": "require_finite_call",
+    "stage": "per-position loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 23,
+    "monotonic_ns": 5994022996894,
+    "kind": "require_finite_call",
+    "stage": "loss reduction sum",
+    "injection_seq": null
+  },
+  {
+    "seq": 24,
+    "monotonic_ns": 5994023096224,
+    "kind": "require_finite_call",
+    "stage": "loss accumulator",
+    "injection_seq": null
+  },
+  {
+    "seq": 25,
+    "monotonic_ns": 5994023208407,
+    "kind": "require_finite_call",
+    "stage": "loss denominator",
+    "injection_seq": null
+  },
+  {
+    "seq": 26,
+    "monotonic_ns": 5994023824160,
+    "kind": "require_finite_call",
+    "stage": "reduced loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 27,
+    "monotonic_ns": 5994046033539,
+    "kind": "require_finite_call",
+    "stage": "batch loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 28,
+    "monotonic_ns": 5994154970046,
+    "kind": "forward",
+    "injection_seq": null
+  },
+  {
+    "seq": 29,
+    "monotonic_ns": 5994156410308,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 30,
+    "monotonic_ns": 5994156420507,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 31,
+    "monotonic_ns": 5994156898157,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 32,
+    "monotonic_ns": 5994157015130,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 33,
+    "monotonic_ns": 5994157094711,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 34,
+    "monotonic_ns": 5994157143755,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 35,
+    "monotonic_ns": 5994157190774,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 36,
+    "monotonic_ns": 5994157267600,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 37,
+    "monotonic_ns": 5994157339968,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 38,
+    "monotonic_ns": 5994157387869,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 39,
+    "monotonic_ns": 5994157433917,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 40,
+    "monotonic_ns": 5994157477480,
+    "kind": "require_finite_call",
+    "stage": "model input",
+    "injection_seq": null
+  },
+  {
+    "seq": 41,
+    "monotonic_ns": 5994253452477,
+    "kind": "require_finite_call",
+    "stage": "transformed prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 42,
+    "monotonic_ns": 5994253980863,
+    "kind": "require_finite_call",
+    "stage": "target",
+    "injection_seq": null
+  },
+  {
+    "seq": 43,
+    "monotonic_ns": 5994254065634,
+    "kind": "require_finite_call",
+    "stage": "prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 44,
+    "monotonic_ns": 5994255112648,
+    "kind": "require_finite_call",
+    "stage": "sample weight",
+    "injection_seq": null
+  },
+  {
+    "seq": 45,
+    "monotonic_ns": 5994255155830,
+    "kind": "require_finite_call",
+    "stage": "target",
+    "injection_seq": null
+  },
+  {
+    "seq": 46,
+    "monotonic_ns": 5994255225964,
+    "kind": "require_finite_call",
+    "stage": "prediction",
+    "injection_seq": null
+  },
+  {
+    "seq": 47,
+    "monotonic_ns": 5994255725345,
+    "kind": "require_finite_call",
+    "stage": "clinical per-position loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 48,
+    "monotonic_ns": 5994255925396,
+    "kind": "require_finite_call",
+    "stage": "per-position loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 49,
+    "monotonic_ns": 5994256169510,
+    "kind": "require_finite_call",
+    "stage": "loss reduction sum",
+    "injection_seq": null
+  },
+  {
+    "seq": 50,
+    "monotonic_ns": 5994256258480,
+    "kind": "require_finite_call",
+    "stage": "loss accumulator",
+    "injection_seq": null
+  },
+  {
+    "seq": 51,
+    "monotonic_ns": 5994256356967,
+    "kind": "require_finite_call",
+    "stage": "loss denominator",
+    "injection_seq": null
+  },
+  {
+    "seq": 52,
+    "monotonic_ns": 5994256865185,
+    "kind": "require_finite_call",
+    "stage": "reduced loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 53,
+    "monotonic_ns": 5994260864711,
+    "kind": "require_finite_call",
+    "stage": "batch loss",
+    "injection_seq": null
+  },
+  {
+    "seq": 54,
+    "monotonic_ns": 5994262296066,
+    "kind": "backward",
+    "injection_seq": null
+  },
+  {
+    "seq": 55,
+    "monotonic_ns": 5994360521628,
+    "kind": "finite_injection",
+    "type": "gradient NaN"
+  },
+  {
+    "seq": 56,
+    "monotonic_ns": 5994488963435,
+    "kind": "require_finite_call",
+    "stage": "gradient",
+    "injection_seq": 55
+  },
+  {
+    "seq": 57,
+    "monotonic_ns": 5994488973594,
+    "kind": "require_finite_call",
+    "stage": "gradient",
+    "injection_seq": 55
+  },
+  {
+    "seq": 58,
+    "monotonic_ns": 5994489663017,
+    "kind": "production_finite_exception",
+    "type": "FloatingPointError",
+    "message": "Nonfinite state: gradient",
+    "injection_seq": 55
+  },
+  {
+    "seq": 59,
+    "monotonic_ns": 5994489671073,
+    "kind": "production_finite_exception",
+    "type": "FloatingPointError",
+    "message": "Nonfinite state: gradient",
+    "injection_seq": 55
+  },
+  {
+    "seq": 60,
+    "monotonic_ns": 5994701456886,
+    "kind": "probe_uncaught_rejection",
+    "type": "FloatingPointError",
+    "message": "Nonfinite state: gradient",
+    "origin": "production"
+  }
+]

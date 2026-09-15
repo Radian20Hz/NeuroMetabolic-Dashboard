@@ -1,0 +1,73 @@
+{
+  "name": "serialization",
+  "status": "PASS",
+  "checks": [],
+  "containment_first": "filesystem mutation outside closure",
+  "environment": {
+    "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+    "torch": "2.11.0+cu130",
+    "lightning": "2.6.1",
+    "pf": "1.7.0",
+    "numpy": "2.4.4",
+    "pandas": "2.3.3",
+    "cuda": "13.0",
+    "cudnn": 91900,
+    "profile": {
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    }
+  },
+  "serialization": {
+    "CPU_U": {
+      "run_id": "3106ee7c00854db8a21c01b0389213b6",
+      "best_sha256": "73f0f8b70aee27a67bc3fda13d8893407da57b685d32e20c5c75e8e6f60c7079",
+      "best_step": 8,
+      "checks": [
+        "oracle",
+        "ownership",
+        "all tensors",
+        "Q/features",
+        "dataset parameters",
+        "normalizer/map",
+        "encoder_cont",
+        "target_scale",
+        "window keys",
+        "completed LAST refusal"
+      ]
+    },
+    "CUDA_C1": {
+      "run_id": "0b4cba625cd94552a44026bfaf87438d",
+      "best_sha256": "f17b9735ca1d57f26ce5890e421481ecefab94bd0f58220955e837e27be8ce72",
+      "best_step": 8,
+      "checks": [
+        "oracle",
+        "ownership",
+        "all tensors",
+        "Q/features",
+        "dataset parameters",
+        "normalizer/map",
+        "encoder_cont",
+        "target_scale",
+        "window keys",
+        "completed LAST refusal"
+      ]
+    }
+  },
+  "counters": {
+    "attempts": 0,
+    "completions": 0,
+    "forward": 0,
+    "backward": 0,
+    "candidates": 288
+  }
+}

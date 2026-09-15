@@ -1,0 +1,137 @@
+"""Explicitly authorized zero-update supplement. Never launches positive fits."""
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import traceback
+import campaign as c
+
+ORIGINAL=c.ROOT/'ml/models/stage_c_training_recertification/20260915T143739Z'
+ORDER=['CPU_N_target','CPU_N_gradient','CUDA_N_input','CUDA_N_target','CUDA_N_gradient','serialization']
+LIMITS=dict(attempts=0,completions=0,forward=32,backward=2,candidates=300,worker_seconds=90,total_seconds=300)
+
+def inventory(root):
+    return {str(p.relative_to(root)):c.sha(p) for p in sorted(root.rglob('*')) if p.is_file()}
+
+def serialization(root,out,report,fixture,args,p,b,r,cpu,exact,close,count,torch,pf):
+    """Original trained BESTs and saved interrupted LASTs, on verified copies only."""
+    def deny(*a,**kw):
+        raise AssertionError('serialization forbids fit/backward/base AdamW')
+    def deny_adam(*a,**kw):
+        ledger=json.loads((root/'ledger.json').read_text());ledger['attempts']+=1;c.save(root/'ledger.json',ledger)
+        raise AssertionError('serialization containment: base AdamW forbidden')
+    from unittest.mock import patch
+    import lightning.pytorch as pl
+    old=c.serialization_original
+    with patch.object(torch.optim.AdamW,'step',deny_adam),patch.object(torch.Tensor,'backward',deny),patch.object(pl.Trainer,'fit',deny):
+        # Registry.verified checks ownership, hash, schema, normalizer, Q and full state.
+        last_evidence={}
+        for name in ('CPU_P','CUDA_P'):
+            saved=json.loads((root/name/'result.json').read_text())
+            reg=r.Registry(root/'boundary_owned')
+            path,payload,record=reg.verified(saved['run_id'],'last',saved['contract'])
+            assert record==saved['registry']['last']
+            assert record['global_step']==4 and record['boundary_complete'] and not record['terminated']
+            assert payload['global_step']==4
+            last_evidence[name]=dict(file=str(path.relative_to(root)),sha256=c.sha(path),role='last',step=4)
+        report['last_verification']=last_evidence
+        code=old(root,out,report,fixture,args,p,b,r,cpu,exact,close,count,torch,pf)
+        assert json.loads((root/'ledger.json').read_text())['attempts']==0
+        return code
+
+
+def parent():
+    assert subprocess.check_output(['git','branch','--show-current'],text=True).strip()=='research/baseline-audit'
+    oldspec=json.loads((ORIGINAL/'preregistration.json').read_text())
+    for path,h in oldspec['source_hashes'].items():
+        if path!='ml/tests/stage_c_recertification/campaign.py':assert c.sha(c.ROOT/path)==h,'source drift '+path
+    assert c.sha(c.ROOT/'experiments/stage_c_training_recertification/supplement_preparation/campaign_before.py.txt')==oldspec['source_hashes']['ml/tests/stage_c_recertification/campaign.py']
+    run_id=time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-supplement'
+    root=c.ROOT/'ml/models/stage_c_training_recertification'/run_id
+    meta=c.ROOT/'experiments/stage_c_training_recertification'/run_id
+    root.mkdir(exist_ok=False);meta.mkdir(exist_ok=False)
+    originals=inventory(ORIGINAL)
+    spec=dict(revision='nmd-c02-zero-update-supplement-1',original=str(ORIGINAL),original_hashes=originals,
+        original_preregistration_sha256=c.sha(ORIGINAL/'preregistration.json'),
+        source_hashes={path:c.sha(c.ROOT/path) for path in c.SOURCES+[str(Path(__file__).relative_to(c.ROOT))]},
+        limits=LIMITS,order=ORDER,config=c.CONFIG,tolerances=c.TOLS,normalizer_tolerance=dict(atol=1e-5,rtol=1e-5),
+        head=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+        branch='research/baseline-audit',initial_status=subprocess.check_output(['git','status','--short'],text=True),
+        inherited=['R0','CPU_U/P/R/compare','CUDA_C1/C2/C3/P/R/compare','CPU_N_input'],
+        refusals=dict(input=['Nonfinite state: model input'],target=['Nonfinite state: model input','Nonfinite state: target','Nonfinite state: valid target'],gradient=['Nonfinite state: gradient']),
+        acceptance='Exact production require_finite traceback; injection evidence; containment never first; zero base AdamW attempts/completions; no valid BEST/LAST in probes. All original replay results inherited unchanged.',
+        artifact_policy='Hash-verified byte copies; saved P registry snapshot for interrupted LAST; writes/export only to supplemental copy. No source evidence mutation.',
+        no_retries=True,positive_fit_workers=0,negative_workers=5)
+    c.save(root/'preregistration.json',spec);c.save(meta/'preregistration.json',spec)
+    c.save(root/'ledger.json',dict(attempts=0,completions=0,forward=0,backward=0,candidates=0))
+    # Only this campaign's synthetic artifacts are eligible for copying.
+    for name in ('R0','CPU_U','CUDA_C1','CPU_P','CUDA_P'):
+        (root/name).mkdir()
+        files=['result.json']+(['fixture.pt','fixture.json'] if name=='R0' else [])
+        for file in files:
+            src=ORIGINAL/name/file;dest=root/name/file
+            shutil.copyfile(src,dest);assert c.sha(dest)==originals[str(src.relative_to(ORIGINAL))]
+    (root/'owned').mkdir();(root/'boundary_owned').mkdir()
+    copied={}
+    for name in ('CPU_U','CUDA_C1','CPU_P','CUDA_P'):
+        report=json.loads((root/name/'result.json').read_text());rid=report['run_id']
+        dest=(root/'boundary_owned' if name.endswith('_P') else root/'owned')/rid
+        dest.mkdir()
+        manifest=report['registry']
+        # Use the immutable per-worker registry state, including the P boundary.
+        c.save(dest/'run.json',manifest)
+        for role in ('best','last'):
+            rec=manifest.get(role)
+            if not rec:continue
+            src=ORIGINAL/'owned'/rid/rec['file']
+            assert src.resolve().parent==(ORIGINAL/'owned'/rid).resolve() and not src.is_symlink()
+            assert c.sha(src)==rec['sha256']==originals[str(src.relative_to(ORIGINAL))]
+            if not (dest/rec['file']).exists():shutil.copyfile(src,dest/rec['file'])
+            assert c.sha(dest/rec['file'])==rec['sha256']
+        copied[name]=dict(run_id=rid,source_report_sha256=c.sha(ORIGINAL/name/'result.json'),copied_inventory=inventory(dest))
+    c.save(root/'copies.json',copied);c.save(meta/'copies.json',copied)
+    began=time.monotonic();invocations=[];status='PASS'
+    env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',MPLCONFIGDIR=str(root/'mpl'),TMPDIR=str(root),CUBLAS_WORKSPACE_CONFIG=':4096:8')
+    # GPU access gate is mandatory before even negative workers.
+    for name in ['preflight']+ORDER:
+        remaining=LIMITS['total_seconds']-(time.monotonic()-began)
+        if remaining<=0:status='TIMEOUT';break
+        out=root/name;out.mkdir()
+        command=[str(c.ROOT/'.venv/bin/python'),'-B',str(Path(__file__).resolve()),'--worker',name,'--root',str(root)]
+        started=time.monotonic()
+        with (out/'console.log').open('w') as stream:
+            child=subprocess.Popen(command,cwd=c.ROOT,env=env,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+            try:code=child.wait(timeout=min(90,remaining))
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid,signal.SIGKILL);child.wait();code=124;status='TIMEOUT'
+        invocations.append(dict(name=name,command=command,exit_code=code,seconds=time.monotonic()-started))
+        c.save(root/'invocations.json',invocations);c.save(meta/'invocations.json',invocations)
+        evidence=root/'preflight.json' if name=='preflight' else out/'result.json'
+        if evidence.exists():c.save(meta/(name+'.json'),json.loads(evidence.read_text()))
+        print(name,code,flush=True)
+        if code:
+            if status!='TIMEOUT':status='FAIL'
+            break
+    unchanged=inventory(ORIGINAL)==originals
+    if not unchanged:status='FAIL'
+    ledger=json.loads((root/'ledger.json').read_text())
+    if ledger['attempts'] or ledger['completions']:status='FAIL'
+    result=dict(verdict=status,original_unchanged=unchanged,counters=ledger,invocations=invocations,seconds=time.monotonic()-began,
+        completed=len(invocations)==len(ORDER)+1,preregistration_sha256=c.sha(root/'preregistration.json'),root=str(root))
+    c.save(root/'result.json',result);c.save(meta/'result.json',result)
+    print(json.dumps(result,indent=2));return 0 if status=='PASS' else 1
+
+if __name__=='__main__':
+    import argparse
+    parser=argparse.ArgumentParser();parser.add_argument('--worker');parser.add_argument('--root',type=Path)
+    options=parser.parse_args()
+    if options.worker:
+        assert options.worker in ORDER+['preflight'],'positive runs forbidden'
+        if options.worker=='preflight':raise SystemExit(c.gpu_preflight(options.root))
+        c.serialization_original=c.serialization;c.serialization=serialization
+        raise SystemExit(c.worker(options.root,options.worker))
+    raise SystemExit(parent())

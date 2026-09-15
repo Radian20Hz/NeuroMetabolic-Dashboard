@@ -1,0 +1,89 @@
+[
+  {
+    "seq": 1,
+    "monotonic_ns": 5943618653262,
+    "kind": "containment",
+    "audit_event": "os.mkdir",
+    "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+    "operation": "os.mkdir",
+    "stack": [
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 224,
+        "function": "<module>"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 91,
+        "function": "worker"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1434,
+        "function": "_handle_fromlist"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 491,
+        "function": "_call_with_frames_removed"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1371,
+        "function": "_find_and_load"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 1342,
+        "function": "_find_and_load_unlocked"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 938,
+        "function": "_load_unlocked"
+      },
+      {
+        "file": "<frozen importlib._bootstrap_external>",
+        "line": 759,
+        "function": "exec_module"
+      },
+      {
+        "file": "<frozen importlib._bootstrap>",
+        "line": 491,
+        "function": "_call_with_frames_removed"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+        "line": 104,
+        "function": "<module>"
+      },
+      {
+        "file": "/usr/lib/python3.14/pathlib/__init__.py",
+        "line": 1011,
+        "function": "mkdir"
+      },
+      {
+        "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+        "line": 66,
+        "function": "audit"
+      }
+    ],
+    "injection_seq": null,
+    "existed_directory": true,
+    "immediate_library_call": {
+      "file": "/usr/lib/python3.14/pathlib/__init__.py",
+      "function": "mkdir",
+      "line": 1011
+    },
+    "escaped_immediate_library_call": false,
+    "became_worker_final_uncaught_exception": false,
+    "propagation": [
+      {
+        "file": "/usr/lib/python3.14/pathlib/__init__.py",
+        "function": "mkdir",
+        "line": 1011
+      }
+    ],
+    "classification": "caught existing-directory mkdir attempt"
+  }
+]

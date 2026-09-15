@@ -1,0 +1,39 @@
+{
+  "name": "CPU_N_target",
+  "status": "FAIL",
+  "checks": [],
+  "environment": {
+    "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+    "torch": "2.11.0+cu130",
+    "lightning": "2.6.1",
+    "pf": "1.7.0",
+    "numpy": "2.4.4",
+    "pandas": "2.3.3",
+    "cuda": "13.0",
+    "cudnn": 91900,
+    "cuda_available": true,
+    "gpu": "NVIDIA GeForce RTX 3070",
+    "profile": {
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    }
+  },
+  "traceback": "Traceback (most recent call last):\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py\", line 237, in worker\n    parent_payload=None;checkpoint=None;reg=r.Registry(args.registry_dir);expected=r.contract(training,args,p.QUANTILES)\n                                            ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^\n  File \"/home/radian/NeuroMetabolic Dashboard/ml/scripts/checkpoint_registry.py\", line 162, in __init__\n    raise ValueError(\"Refusing to import an existing directory as a trusted run registry\")\nValueError: Refusing to import an existing directory as a trusted run registry\n",
+  "counters": {
+    "attempts": 0,
+    "completions": 0,
+    "forward": 0,
+    "backward": 0,
+    "candidates": 0
+  }
+}

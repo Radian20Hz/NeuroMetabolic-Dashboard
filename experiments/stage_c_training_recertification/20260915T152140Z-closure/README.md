@@ -1,0 +1,1 @@
+Narrow C02 closure: read-only BEST assertions passed; CPU_N_target acceptance failed on filesystem containment flag.0 optimizer calls. Original unchanged. Weights-only NOT RECERTIFIED AFTER C02 / DEFERRED. No retries.

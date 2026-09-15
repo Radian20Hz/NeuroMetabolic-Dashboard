@@ -1,0 +1,737 @@
+{
+  "diagnostic": {
+    "status": "PASS",
+    "production_message": null,
+    "injection_proven": null,
+    "no_valid_best_last": null,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5943618653262,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": []
+  },
+  "CPU_N_target": {
+    "status": "PASS",
+    "production_message": "Nonfinite state: model input",
+    "injection_proven": true,
+    "no_valid_best_last": true,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5950128868244,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": [
+      {
+        "seq": 28,
+        "monotonic_ns": 5953913141345,
+        "kind": "finite_injection",
+        "type": "target Inf"
+      },
+      {
+        "seq": 38,
+        "monotonic_ns": 5953915761905,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "injection_seq": 28
+      },
+      {
+        "seq": 39,
+        "monotonic_ns": 5953915766914,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "injection_seq": 28
+      },
+      {
+        "seq": 40,
+        "monotonic_ns": 5954031255243,
+        "kind": "probe_uncaught_rejection",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "origin": "production"
+      }
+    ]
+  },
+  "CPU_N_gradient": {
+    "status": "PASS",
+    "production_message": "Nonfinite state: gradient",
+    "injection_proven": true,
+    "no_valid_best_last": true,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5959566475813,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": [
+      {
+        "seq": 54,
+        "monotonic_ns": 5963412399133,
+        "kind": "backward",
+        "injection_seq": null
+      },
+      {
+        "seq": 55,
+        "monotonic_ns": 5963439919396,
+        "kind": "finite_injection",
+        "type": "gradient NaN"
+      },
+      {
+        "seq": 58,
+        "monotonic_ns": 5963539069172,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "injection_seq": 55
+      },
+      {
+        "seq": 59,
+        "monotonic_ns": 5963539076847,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "injection_seq": 55
+      },
+      {
+        "seq": 60,
+        "monotonic_ns": 5963695631380,
+        "kind": "probe_uncaught_rejection",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "origin": "production"
+      }
+    ]
+  },
+  "CUDA_N_input": {
+    "status": "PASS",
+    "production_message": "Nonfinite state: model input",
+    "injection_proven": true,
+    "no_valid_best_last": true,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5969276723969,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": [
+      {
+        "seq": 28,
+        "monotonic_ns": 5973744792595,
+        "kind": "finite_injection",
+        "type": "input NaN"
+      },
+      {
+        "seq": 33,
+        "monotonic_ns": 5973748819383,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "injection_seq": 28
+      },
+      {
+        "seq": 34,
+        "monotonic_ns": 5973748828300,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "injection_seq": 28
+      },
+      {
+        "seq": 35,
+        "monotonic_ns": 5973890897008,
+        "kind": "probe_uncaught_rejection",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: model input",
+        "origin": "production"
+      }
+    ]
+  },
+  "CUDA_N_target": {
+    "status": "PASS",
+    "production_message": "Nonfinite state: target",
+    "injection_proven": true,
+    "no_valid_best_last": true,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5979376233955,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": [
+      {
+        "seq": 28,
+        "monotonic_ns": 5983857245984,
+        "kind": "finite_injection",
+        "type": "target Inf"
+      },
+      {
+        "seq": 44,
+        "monotonic_ns": 5983953737185,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: target",
+        "injection_seq": 28
+      },
+      {
+        "seq": 45,
+        "monotonic_ns": 5984098586005,
+        "kind": "probe_uncaught_rejection",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: target",
+        "origin": "production"
+      }
+    ]
+  },
+  "CUDA_N_gradient": {
+    "status": "PASS",
+    "production_message": "Nonfinite state: gradient",
+    "injection_proven": true,
+    "no_valid_best_last": true,
+    "containment": [
+      {
+        "seq": 1,
+        "monotonic_ns": 5989646243429,
+        "kind": "containment",
+        "audit_event": "os.mkdir",
+        "resource": "/home/radian/NeuroMetabolic Dashboard/ml/models/baseline_v1_stage_a",
+        "operation": "os.mkdir",
+        "stack": [
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 224,
+            "function": "<module>"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 91,
+            "function": "worker"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1434,
+            "function": "_handle_fromlist"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1371,
+            "function": "_find_and_load"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 1342,
+            "function": "_find_and_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 938,
+            "function": "_load_unlocked"
+          },
+          {
+            "file": "<frozen importlib._bootstrap_external>",
+            "line": 759,
+            "function": "exec_module"
+          },
+          {
+            "file": "<frozen importlib._bootstrap>",
+            "line": 491,
+            "function": "_call_with_frames_removed"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/scripts/train_tft_population_v2.py",
+            "line": 104,
+            "function": "<module>"
+          },
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "line": 1011,
+            "function": "mkdir"
+          },
+          {
+            "file": "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/finite_closure.py",
+            "line": 66,
+            "function": "audit"
+          }
+        ],
+        "injection_seq": null,
+        "existed_directory": true,
+        "immediate_library_call": {
+          "file": "/usr/lib/python3.14/pathlib/__init__.py",
+          "function": "mkdir",
+          "line": 1011
+        },
+        "escaped_immediate_library_call": false,
+        "became_worker_final_uncaught_exception": false,
+        "propagation": [
+          {
+            "file": "/usr/lib/python3.14/pathlib/__init__.py",
+            "function": "mkdir",
+            "line": 1011
+          }
+        ],
+        "classification": "caught existing-directory mkdir attempt"
+      }
+    ],
+    "ordering": [
+      {
+        "seq": 54,
+        "monotonic_ns": 5994262296066,
+        "kind": "backward",
+        "injection_seq": null
+      },
+      {
+        "seq": 55,
+        "monotonic_ns": 5994360521628,
+        "kind": "finite_injection",
+        "type": "gradient NaN"
+      },
+      {
+        "seq": 58,
+        "monotonic_ns": 5994489663017,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "injection_seq": 55
+      },
+      {
+        "seq": 59,
+        "monotonic_ns": 5994489671073,
+        "kind": "production_finite_exception",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "injection_seq": 55
+      },
+      {
+        "seq": 60,
+        "monotonic_ns": 5994701456886,
+        "kind": "probe_uncaught_rejection",
+        "type": "FloatingPointError",
+        "message": "Nonfinite state: gradient",
+        "origin": "production"
+      }
+    ]
+  }
+}

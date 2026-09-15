@@ -1,0 +1,291 @@
+{
+  "name": "R0",
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "R0_inheritance",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_C02_actual_tensors_no_fallback",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_C02_sentinels_rename_refusals",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_A_grid_masks_keys",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_callbacks_comparator",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_loss_lengths_LR_no_updates",
+      "status": "PASS"
+    },
+    {
+      "name": "R0_compatibility_before_deserialization",
+      "status": "PASS"
+    }
+  ],
+  "environment": {
+    "python": "3.14.7 (main, Aug 14 2026, 06:38:32) [GCC 16.2.1 20260810]",
+    "torch": "2.11.0+cu130",
+    "lightning": "2.6.1",
+    "pf": "1.7.0",
+    "numpy": "2.4.4",
+    "pandas": "2.3.3",
+    "cuda": "13.0",
+    "cudnn": 91900,
+    "cuda_available": true,
+    "gpu": "NVIDIA GeForce RTX 3070",
+    "profile": {
+      "deterministic_algorithms": true,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    }
+  },
+  "effective_fixture_config": {
+    "context": 48,
+    "horizon": 12,
+    "hidden_size": 8,
+    "hidden_continuous_size": 4,
+    "attention_heads": 1,
+    "lstm_layers": 1,
+    "dropout": 0.1,
+    "batch_size": 2,
+    "lr": 0.0003,
+    "gradient_clip": 1.0,
+    "accumulate_grad_batches": 1,
+    "num_workers": 0,
+    "epochs": 4,
+    "max_steps": 8,
+    "seed": 42,
+    "shuffle": true,
+    "no_swa": true,
+    "synthetic_audit": true,
+    "no_gpu": true,
+    "mode": "fresh",
+    "run_id": null,
+    "parent_run_id": null,
+    "stop_after_epoch": null,
+    "registry_dir": "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z/owned",
+    "dataset_sha256": "3334c2a6eb4f44e3990da08e8ac24578dd716a794f9941192485d2712127683c"
+  },
+  "window_keys": {
+    "train": [
+      {
+        "subject_id": "synthetic_A",
+        "time_idx_first": 0,
+        "time_idx_last": 59,
+        "time_idx_first_prediction": 48
+      },
+      {
+        "subject_id": "synthetic_A",
+        "time_idx_first": 1,
+        "time_idx_last": 60,
+        "time_idx_first_prediction": 49
+      },
+      {
+        "subject_id": "synthetic_B",
+        "time_idx_first": 0,
+        "time_idx_last": 59,
+        "time_idx_first_prediction": 48
+      },
+      {
+        "subject_id": "synthetic_B",
+        "time_idx_first": 1,
+        "time_idx_last": 60,
+        "time_idx_first_prediction": 49
+      }
+    ],
+    "validation": [
+      {
+        "subject_id": "synthetic_A",
+        "time_idx_first": 0,
+        "time_idx_last": 59,
+        "time_idx_first_prediction": 48
+      },
+      {
+        "subject_id": "synthetic_A",
+        "time_idx_first": 1,
+        "time_idx_last": 60,
+        "time_idx_first_prediction": 49
+      },
+      {
+        "subject_id": "synthetic_B",
+        "time_idx_first": 0,
+        "time_idx_last": 59,
+        "time_idx_first_prediction": 48
+      },
+      {
+        "subject_id": "synthetic_B",
+        "time_idx_first": 1,
+        "time_idx_last": 60,
+        "time_idx_first_prediction": 49
+      }
+    ]
+  },
+  "window_hash": "dd4380903969d185cc37734e4a29d06fa760e125170776642ad7a2dfa1ba8fd4",
+  "fixture_sha256": "3334c2a6eb4f44e3990da08e8ac24578dd716a794f9941192485d2712127683c",
+  "dataset_artifact_sha256": "94499485b4daf0653d50a691eee19925aac453971376478c3ded244a95fc1b6b",
+  "inheritance": {
+    "C_mechanical": {
+      "ml/scripts/evaluation_stage_c.py": true,
+      "ml/scripts/train_tft_population_v2.py": true,
+      "ml/scripts/checkpoint_registry.py": true,
+      "configs/baseline_v1_stage_c.json": true
+    },
+    "unchanged_components": {
+      "ml/scripts/observed_windows.py": true,
+      "ml/scripts/numerical_profile.py": true
+    },
+    "A_B_trajectory": "NOT inherited after C02",
+    "canonical_data": "inherited metadata only, not opened"
+  },
+  "normalizer": {
+    "class": "pytorch_forecasting.data.encoders.GroupNormalizer",
+    "state": {
+      "mapping": [
+        [
+          "_groups",
+          [
+            "subject_id"
+          ]
+        ],
+        [
+          "_method_kwargs",
+          {
+            "mapping": []
+          }
+        ],
+        [
+          "center",
+          true
+        ],
+        [
+          "groups",
+          [
+            "subject_id"
+          ]
+        ],
+        [
+          "method",
+          "standard"
+        ],
+        [
+          "method_kwargs",
+          {
+            "mapping": []
+          }
+        ],
+        [
+          "missing_",
+          {
+            "mapping": [
+              [
+                "center",
+                4.883984342702586
+              ],
+              [
+                "scale",
+                0.1523041083154344
+              ]
+            ]
+          }
+        ],
+        [
+          "nmd_revision",
+          "observed-train-encoded-subject-v2"
+        ],
+        [
+          "nmd_subject_mapping",
+          {
+            "mapping": [
+              [
+                "synthetic_A",
+                0
+              ],
+              [
+                "synthetic_B",
+                1
+              ]
+            ]
+          }
+        ],
+        [
+          "norm_",
+          {
+            "columns": [
+              "center",
+              "scale"
+            ],
+            "index": [
+              0,
+              1
+            ],
+            "dtypes": [
+              "float64",
+              "float64"
+            ],
+            "values": {
+              "dtype": "float64",
+              "shape": [
+                2,
+                2
+              ],
+              "values": [
+                [
+                  4.356575537423297,
+                  0.18443822087312683
+                ],
+                [
+                  5.411393147981874,
+                  0.12016999575774195
+                ]
+              ]
+            }
+          }
+        ],
+        [
+          "scale_by_group",
+          false
+        ],
+        [
+          "transformation",
+          "log"
+        ]
+      ]
+    }
+  },
+  "callback_fields": [
+    "monitor",
+    "best_model_score",
+    "best_model_path",
+    "current_score",
+    "dirpath",
+    "best_k_models",
+    "kth_best_model_path",
+    "kth_value",
+    "last_model_path"
+  ],
+  "counters": {
+    "attempts": 0,
+    "completions": 0,
+    "forward": 0,
+    "backward": 0,
+    "candidates": 458
+  }
+}

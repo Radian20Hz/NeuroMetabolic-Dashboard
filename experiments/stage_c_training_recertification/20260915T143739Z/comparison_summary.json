@@ -1,0 +1,321 @@
+{
+  "CPU_compare": {
+    "CPU_U-CPU_PR": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    }
+  },
+  "CUDA_compare": {
+    "CUDA_C1-CUDA_C2": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    },
+    "CUDA_C1-CUDA_C3": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    },
+    "CUDA_C2-CUDA_C3": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    },
+    "CUDA_C1-CUDA_PR": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    },
+    "CUDA_C2-CUDA_PR": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    },
+    "CUDA_C3-CUDA_PR": {
+      "loss": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "lr": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": null,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "pre_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "post_clip": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "validation": {
+        "exceedances": 0,
+        "max_abs": 0.0,
+        "max_normalized": 0.0,
+        "worst_flat_index": 0,
+        "exact": true
+      },
+      "parameters": {
+        "tensors": 1122,
+        "max_abs": 0.0,
+        "exceedances": 0,
+        "max_normalized": 0,
+        "worst_tensor": "input_embeddings.embeddings.subject_id.weight",
+        "all_exact": true
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+PASS: exact known handled import mkdir diagnostic and five finite probes.0 base AdamW calls,10 forward,2 backward. Narrowed C02 closure uses inherited replay/BEST evidence. Weights-only NOT RECERTIFIED AFTER C02 / DEFERRED. No further stage.

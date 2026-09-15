@@ -1,0 +1,202 @@
+{
+  "revision": "nmd-c02-training-recertification-1",
+  "config": {
+    "context": 48,
+    "horizon": 12,
+    "hidden_size": 8,
+    "hidden_continuous_size": 4,
+    "attention_heads": 1,
+    "lstm_layers": 1,
+    "dropout": 0.1,
+    "batch_size": 2,
+    "lr": 0.0003,
+    "gradient_clip": 1.0,
+    "accumulate_grad_batches": 1,
+    "num_workers": 0,
+    "epochs": 4,
+    "max_steps": 8,
+    "seed": 42,
+    "shuffle": true,
+    "no_swa": true,
+    "synthetic_audit": true
+  },
+  "tolerances": {
+    "loss": [
+      1e-05,
+      0.0001
+    ],
+    "validation": [
+      1e-05,
+      0.0001
+    ],
+    "pre_clip": [
+      1e-05,
+      0.001
+    ],
+    "post_clip": [
+      1e-05,
+      0.001
+    ],
+    "parameters": [
+      1e-06,
+      0.0001
+    ],
+    "lr": [
+      0.0,
+      0.0
+    ]
+  },
+  "limits": {
+    "attempts": 48,
+    "completions": 48,
+    "forward": 256,
+    "backward": 64,
+    "candidates": 1024,
+    "worker_seconds": 90,
+    "total_seconds": 600
+  },
+  "fixture": "61 regular bins per synthetic subject; A=55+.8i, B=180+1.5i; bin10 unobserved causal ffill; role train/assessment; select full decoder starts48,49 per subject",
+  "fixture_policy": "Build once with current production builders in R0; serialize owned datasets and reuse identical tensors/windows in every fit worker. Candidate construction calls counted cumulatively in R0/serialization, not recounted for deserialization.",
+  "oracle_tolerance": {
+    "atol": 1e-05,
+    "rtol": 1e-05
+  },
+  "identities": "exact",
+  "pairs": [
+    "CPU_U-CPU_PR",
+    "CUDA_C1-CUDA_C2",
+    "CUDA_C1-CUDA_C3",
+    "CUDA_C2-CUDA_C3",
+    "CUDA_C1-CUDA_PR",
+    "CUDA_C2-CUDA_PR",
+    "CUDA_C3-CUDA_PR"
+  ],
+  "order": [
+    "R0",
+    "CPU_U",
+    "CPU_P",
+    "CPU_R",
+    "CPU_compare",
+    "CUDA_C1",
+    "CUDA_C2",
+    "CUDA_C3",
+    "CUDA_P",
+    "CUDA_R",
+    "CUDA_compare",
+    "CPU_N_input",
+    "CPU_N_target",
+    "CPU_N_gradient",
+    "CUDA_N_input",
+    "CUDA_N_target",
+    "CUDA_N_gradient",
+    "serialization"
+  ],
+  "expected_refusals": [
+    "unknown/no-observed subjects",
+    "grid/mask errors",
+    "incompatible callback state",
+    "compatibility before deserialize",
+    "input NaN",
+    "target Inf",
+    "gradient NaN"
+  ],
+  "allowed_warning": "upsample_linear1d_backward_out_cuda",
+  "source_hashes": {
+    "ml/scripts/train_tft_population_v2.py": "dcdb6c738d70958a4a105d81c965f4dd17af0db35143ba77d98ba5b639f24572",
+    "ml/scripts/baseline_training.py": "0cdef5a6311e3804cda69dfbc936cafb5fa4b560e12e53c71250c0b569018d74",
+    "ml/scripts/checkpoint_registry.py": "cb3b9ca3495faa06ee039c28c2085fb3a9ee1c246f9cdeba766d11707d25df3d",
+    "ml/scripts/finite_training.py": "3e0adea81cd1fdef6fec933213b1c1cb84b5fe8172716c7a69acab78e4abbf6a",
+    "ml/scripts/numerical_profile.py": "5bf981d01877b1900a0c8f0426a5aa27966ec9d6a64ceb9c8639e0306c0e5630",
+    "ml/scripts/observed_windows.py": "f530d31ff6c41f50c28b86e02ad70af5c749b763799377ab11df872d916417a9",
+    "ml/scripts/temporal_protocol.py": "e0f0661387dffe1563669284fcfeb009ad7a6bab15712011e6f26ef9637889f0",
+    "ml/scripts/diagnostics/callback_restore.py": "50f5071efade402dd946b808546bea0b0fb9d50ef3f2acfe81ae96ea96e5b7c3",
+    "configs/baseline_v1_stage_c.json": "a85bb26214253a855af066b590565b3b8b45beebb34302e686cc36bc752e1f35",
+    "docs/STAGE_C_TRAINING_RECERTIFICATION_PLAN.md": "86101d4782444af3be5dc2297b3b2c6f0c2abbf320352fe66735fe4726996c71",
+    "docs/CODEX_STAGE_C_TRAINING_RECERTIFICATION_TASK.md": "d9ba228fac8a9075ce8c44530fc23a9ad8a368e16b781bb3f9dd00e770268f04",
+    "ml/tests/stage_c_recertification/campaign.py": "56afa2d5adcf7b33d59cc6b2dda826f9e515f9d84c34f9eb133261a132034192"
+  },
+  "head": "2fed05028aaa303ab06362cee96d02c3221fece8",
+  "branch": "research/baseline-audit",
+  "initial_status": "?? docs/STAGE_C_TRAINING_RECERTIFICATION_REPORT.md\n?? experiments/stage_c_training_recertification/\n?? ml/tests/stage_c_recertification/\n",
+  "cuda_preflight": {
+    "status": "PASS",
+    "expected_gpu": "NVIDIA GeForce RTX 3070",
+    "binary": "/usr/bin/nvidia-smi",
+    "cwd": "/home/radian/NeuroMetabolic Dashboard",
+    "device_nodes": [
+      "/dev/nvidia-caps",
+      "/dev/nvidia-modeset",
+      "/dev/nvidia-uvm",
+      "/dev/nvidia-uvm-tools",
+      "/dev/nvidia0",
+      "/dev/nvidiactl"
+    ],
+    "environment": {
+      "PATH": "/home/radian/.codex/tmp/arg0/codex-arg0Ws8Lzg:/home/radian/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/opt/cuda/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/home/radian/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/lib/chatgpt/resources",
+      "CUDA_VISIBLE_DEVICES": null,
+      "NVIDIA_VISIBLE_DEVICES": null,
+      "LD_LIBRARY_PATH": null,
+      "LD_PRELOAD": null
+    },
+    "device_nodes_visible": true,
+    "nvidia_smi": {
+      "command": [
+        "/usr/bin/nvidia-smi",
+        "--query-gpu=name,driver_version,memory.total",
+        "--format=csv,noheader"
+      ],
+      "exit_code": 0,
+      "stdout": "NVIDIA GeForce RTX 3070, 615.71.09, 8192 MiB\n",
+      "stderr": ""
+    },
+    "pytorch": {
+      "version": "2.11.0+cu130",
+      "cuda": "13.0",
+      "available": true,
+      "device_count": 1,
+      "device_names": [
+        "NVIDIA GeForce RTX 3070"
+      ]
+    },
+    "initial_flags": {
+      "deterministic_algorithms": false,
+      "warn_only": false,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": false,
+      "fp32_precision": "none",
+      "cuda_matmul_precision": "none",
+      "cudnn_precision": "none",
+      "matmul_precision": "highest",
+      "cublas_workspace": null,
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    },
+    "effective_flags": {
+      "deterministic_algorithms": true,
+      "warn_only": true,
+      "cudnn_benchmark": false,
+      "cudnn_deterministic": true,
+      "fp32_precision": "ieee",
+      "cuda_matmul_precision": "ieee",
+      "cudnn_precision": "ieee",
+      "matmul_precision": "highest",
+      "cublas_workspace": ":4096:8",
+      "precision": "32-true",
+      "amp": false,
+      "num_workers": 0
+    },
+    "invocation": {
+      "command": [
+        "/home/radian/NeuroMetabolic Dashboard/.venv/bin/python",
+        "-B",
+        "/home/radian/NeuroMetabolic Dashboard/ml/tests/stage_c_recertification/campaign.py",
+        "--preflight",
+        "--root",
+        "/home/radian/NeuroMetabolic Dashboard/ml/models/stage_c_training_recertification/20260915T143739Z"
+      ],
+      "exit_code": 0,
+      "seconds": 11.780243315999996
+    }
+  }
+}
